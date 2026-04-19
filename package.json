@@ -9,7 +9,7 @@
   },
   "files": [
     "dist/",
-    "data/"
+    "skills/"
   ],
   "scripts": {
     "build": "tsc",

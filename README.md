@@ -1,6 +1,14 @@
 # pike-ai-kb
 
-Standalone MCP server providing a curated, runtime-verified Pike language knowledge base for AI code generation. Zero dependency on the Pike source tree — uses only a local Pike installation for runtime tools.
+Pike language MCP server + skills.sh-installable knowledge base. Curated, runtime-verified reference for Pike 8.0.1116 covering 130+ modules.
+
+## Install via skills.sh
+
+```bash
+npx skills add your-org/pike-ai-kb
+```
+
+This installs the `pike-language-reference` skill to your agent's skill directory. Compatible with Claude Code, Cursor, Codex, OpenCode, and 40+ other agents.
 
 ## What's Included
 
@@ -8,67 +16,53 @@ Standalone MCP server providing a curated, runtime-verified Pike language knowle
 
 | File | Lines | Content |
 |------|-------|---------|
-| `data/stdlib-patterns.md` | 6,574 | 157 sections covering 130+ modules |
-| `data/syntax.md` | 896 | Control flow, operators, declarations, preprocessor |
-| `data/types.md` | 326 | Type system, coercion, typeof, operators |
-| `data/SKILL.md` | 313 | Key concepts, rules, and gotchas |
+| `references/stdlib-patterns.md` | 6,574 | 157 sections covering 130+ modules |
+| `references/syntax.md` | 896 | Control flow, operators, declarations, preprocessor |
+| `references/types.md` | 326 | Type system, coercion, typeof, operators |
+| `SKILL.md` | 313 | Key concepts, rules, and gotchas |
 
-**MCP Tools** (5):
-- `pike-evaluate` — Execute Pike code
-- `pike-check-syntax` — Compile without executing
-- `pike-describe-symbol` — Runtime introspection of any symbol
-- `pike-list-modules` — List installed Pike modules
-- `pike-list-methods` — List methods on a class/module
+**MCP Server** (additional, optional):
 
-**MCP Resources** (34):
-- `pike://ref/stdlib` — Full standard library reference
-- `pike://ref/syntax` — Syntax reference
-- `pike://ref/types` — Type system reference
-- `pike://ref/skill` — Skill definition with rules/gotchas
-- `pike://ref/{Module}` — Module-specific sections (30 modules)
+| Type | Count | Details |
+|------|-------|---------|
+| Tools | 5 | evaluate, check-syntax, describe-symbol, list-modules, list-methods |
+| Resources | 34 | Full stdlib, syntax, types, skill + 30 module-specific extracts |
+| Prompts | 4 | write-pike, translate-to-pike, explain-pike, review-pike |
 
-**MCP Prompts** (4):
-- `write-pike` — Write Pike code with KB guidance
-- `translate-to-pike` — Translate from another language
-- `explain-pike` — Explain Pike code
-- `review-pike` — Review code for correctness
+## Structure
+
+```
+pike-ai-kb/
+  skills/
+    pike-language-reference/        ← skills.sh discovers this
+      SKILL.md                      ← frontmatter + key rules/gotchas
+      references/
+        stdlib-patterns.md          ← 6,574 lines, 157 sections, 130+ modules
+        syntax.md                   ← 896 lines
+        types.md                    ← 326 lines
+  src/
+    index.ts                        ← MCP server (TypeScript)
+  package.json
+  tsconfig.json
+```
 
 ## Requirements
 
-- Node.js >= 20
-- Pike >= 8.0 installed and on PATH (or set `PIKE_BIN`)
+- Node.js >= 20 (for MCP server)
+- Pike >= 8.0 on PATH (or set `PIKE_BIN` env var) — only needed for execution tools, not for the skill/knowledge base
 
-Pike is only needed for the execution/introspection tools. The knowledge base resources work without Pike.
+## MCP Server Setup
 
-## Install
+### Install from source
 
 ```bash
-# Clone
 git clone <repo-url> pike-ai-kb
 cd pike-ai-kb
-
-# Install dependencies
 npm install
-
-# Build
 npm run build
 ```
 
-## Usage
-
-### Direct
-
-```bash
-# Start the MCP server
-node dist/index.js
-
-# Or via npm
-npm start
-```
-
-### With Claude Desktop / Cursor / etc.
-
-Add to your MCP configuration:
+### Configure in Claude Desktop / Cursor / etc.
 
 ```json
 {
@@ -89,25 +83,6 @@ Add to your MCP configuration:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIKE_BIN` | `pike` | Path to Pike binary (uses PATH lookup by default) |
-
-## Using as a Skill
-
-The `data/SKILL.md` file is a standalone skill definition that can be loaded by any agent framework. It contains:
-
-- Pike language overview and key concepts
-- 12 rules with WRONG/CORRECT examples covering the most common LLM mistakes
-- Operator overloading lfuns reference
-
-For agent frameworks that support skill directories:
-
-```
-your-project/.agents/skills/pike-language-reference/
-  SKILL.md                    ← copy from data/SKILL.md
-  references/
-    stdlib-patterns.md        ← copy from data/stdlib-patterns.md
-    syntax.md                 ← copy from data/syntax.md
-    types.md                  ← copy from data/types.md
-```
 
 ## Knowledge Base Coverage
 
