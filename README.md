@@ -1,68 +1,39 @@
 # pike-ai-kb
 
-Pike language MCP server + skills.sh-installable knowledge base. Curated, runtime-verified reference for Pike 8.0.1116 covering 130+ modules.
+Curated, runtime-verified knowledge base for the Pike programming language (8.0.1116). Covers syntax, type system, and 130+ standard library modules with code examples tested against a live Pike runtime.
 
-## Install via skills.sh
+Installable as an agent skill via [skills.sh](https://skills.sh) or as an MCP server.
+
+## Install
 
 ```bash
-npx skills add your-org/pike-ai-kb
+npx skills add TheSmuks/pike-ai-kb
 ```
 
-This installs the `pike-language-reference` skill to your agent's skill directory. Compatible with Claude Code, Cursor, Codex, OpenCode, and 40+ other agents.
+Works with Claude Code, Cursor, Codex, OpenCode, and 40+ other agents.
 
-## What's Included
-
-**Knowledge Base** (8,100+ lines, all runtime-verified against Pike 8.0.1116):
+## Contents
 
 | File | Lines | Content |
-|------|-------|---------|
-| `references/stdlib-patterns.md` | 6,574 | 157 sections covering 130+ modules |
-| `references/syntax.md` | 896 | Control flow, operators, declarations, preprocessor |
-| `references/types.md` | 326 | Type system, coercion, typeof, operators |
-| `SKILL.md` | 313 | Key concepts, rules, and gotchas |
+|------|------:|---------|
+| `references/stdlib-patterns.md` | 6,574 | 157 sections, 130+ modules |
+| `references/syntax.md` | 896 | Control flow, operators, declarations |
+| `references/types.md` | 326 | Type system, coercion, typeof |
+| `SKILL.md` | 313 | Key concepts, rules, gotchas |
 
-**MCP Server** (additional, optional):
+All examples verified against Pike 8.0.1116.
 
-| Type | Count | Details |
-|------|-------|---------|
-| Tools | 5 | evaluate, check-syntax, describe-symbol, list-modules, list-methods |
-| Resources | 34 | Full stdlib, syntax, types, skill + 30 module-specific extracts |
-| Prompts | 4 | write-pike, translate-to-pike, explain-pike, review-pike |
+## MCP Server
 
-## Structure
+Optional MCP server providing runtime tools alongside the knowledge base.
 
-```
-pike-ai-kb/
-  skills/
-    pike-language-reference/        ← skills.sh discovers this
-      SKILL.md                      ← frontmatter + key rules/gotchas
-      references/
-        stdlib-patterns.md          ← 6,574 lines, 157 sections, 130+ modules
-        syntax.md                   ← 896 lines
-        types.md                    ← 326 lines
-  src/
-    index.ts                        ← MCP server (TypeScript)
-  package.json
-  tsconfig.json
-```
-
-## Requirements
-
-- Node.js >= 20 (for MCP server)
-- Pike >= 8.0 on PATH (or set `PIKE_BIN` env var) — only needed for execution tools, not for the skill/knowledge base
-
-## MCP Server Setup
-
-### Install from source
+### Build
 
 ```bash
-git clone <repo-url> pike-ai-kb
-cd pike-ai-kb
-npm install
-npm run build
+npm install && npm run build
 ```
 
-### Configure in Claude Desktop / Cursor / etc.
+### Configure
 
 ```json
 {
@@ -78,31 +49,35 @@ npm run build
 }
 ```
 
-### Environment Variables
+### Tools
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PIKE_BIN` | `pike` | Path to Pike binary (uses PATH lookup by default) |
+| Tool | Description |
+|------|-------------|
+| `pike-evaluate` | Execute Pike code |
+| `pike-check-syntax` | Compile without executing |
+| `pike-describe-symbol` | Runtime symbol introspection |
+| `pike-list-modules` | List installed modules |
+| `pike-list-methods` | List class/module methods |
 
-## Knowledge Base Coverage
+### Resources
 
-### Top-Level Modules (29 verified)
-Stdio, Array, String, Math, Process, Thread, Crypto, Calendar, Debug, Locale, Regexp, Yabu, ADT, Concurrent, Image, MIME, Parser, Protocols, SSL, Standards, Web, System, Graphics, Tools, _Roxen, Sql, Val, Geography, Gmp, Error
+- `pike://ref/stdlib` -- full standard library reference
+- `pike://ref/syntax` -- syntax reference
+- `pike://ref/types` -- type system reference
+- `pike://ref/{Module}` -- per-module sections (30 modules)
 
-### Key Protocol Modules
-HTTP (client 79 exports + server), DNS (105), SMTP, LDAP (257), IMAP (27 requests), IRC, WebSocket, XMLRPC, SNMP, NNTP, TELNET (155 constants), OBEX (38), Bittorrent, Ident, LPD, LMTP, IPv6
+### Requirements
 
-### Standards Modules
-JSON, URI, UUID (v1/v4), BSON, X509 (56 TBS methods), PEM, ASN1 (37 types), PKCS, IDNA, TLD (253 countries), ISO639_2 (504 languages), EXIF, ID3, IIM
+- Node.js >= 20
+- Pike >= 8.0 on PATH (or set `PIKE_BIN`). Only needed for execution tools, not the knowledge base.
 
-### Notable Documented Areas
-- Predef functions (50+ with verified behaviors)
-- master() object (138 methods)
-- Crypto (62 items: SHA1-512, AES-CBC, RSA, HMAC)
-- Calendar (61 items: 8 calendar systems, timezone)
-- SSL.Context (57 methods)
-- Parser.XML.Tree (65 node methods)
-- Error module (12 structured error types)
+## Coverage
+
+**Modules**: Stdio, Array, String, Math, Process, Thread, Crypto, Calendar, Debug, Locale, Regexp, ADT, Concurrent, Image, MIME, Parser, Protocols, SSL, Standards, Web, System, Sql, Val, Geography, Gmp, Error, Function, Program, Tools
+
+**Protocols**: HTTP, DNS, SMTP, LDAP, IMAP, IRC, WebSocket, XMLRPC, SNMP, NNTP, TELNET, OBEX, Bittorrent, Ident, LPD, LMTP, IPv6
+
+**Standards**: JSON, URI, UUID, BSON, X509, PEM, ASN1, PKCS, IDNA, TLD, ISO639\_2, EXIF, ID3, IIM
 
 ## License
 
