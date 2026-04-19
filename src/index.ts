@@ -9,7 +9,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = resolve(__dirname, "../data");
+const SKILLS_DIR = resolve(__dirname, "../skills/pike-language-reference");
 
 // Pike binary — localhost installation, override via env
 const PIKE_BIN = process.env.PIKE_BIN || "pike";
@@ -23,24 +23,24 @@ let skillCache: string | null = null;
 
 async function loadFile(name: string): Promise<string> {
   try {
-    return await readFile(join(DATA_DIR, name), "utf-8");
+    return await readFile(join(SKILLS_DIR, name), "utf-8");
   } catch {
-    return `File "${name}" not found in ${DATA_DIR}.`;
+    return `File "${name}" not found in ${SKILLS_DIR}.`;
   }
 }
 
 async function getStdlib(): Promise<string> {
-  if (!stdlibCache) stdlibCache = await loadFile("stdlib-patterns.md");
+  if (!stdlibCache) stdlibCache = await loadFile("references/stdlib-patterns.md");
   return stdlibCache;
 }
 
 async function getSyntax(): Promise<string> {
-  if (!syntaxCache) syntaxCache = await loadFile("syntax.md");
+  if (!syntaxCache) syntaxCache = await loadFile("references/syntax.md");
   return syntaxCache;
 }
 
 async function getTypes(): Promise<string> {
-  if (!typesCache) typesCache = await loadFile("types.md");
+  if (!typesCache) typesCache = await loadFile("references/types.md");
   return typesCache;
 }
 
