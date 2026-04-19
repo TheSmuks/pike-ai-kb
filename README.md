@@ -81,4 +81,4 @@ npm install && npm run build
 
 ## License
 
-MPL-2.0
+MIT
