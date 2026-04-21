@@ -307,7 +307,14 @@ class Vec {
   }
 }
 // Common lfuns: `+, `-, `*, `/, `%, `&, `|, `^, `<<, `>>, `+=, `[..],
-//               `==, `<, `>, `!, `[], `[]=, _sizeof, _values,
-//               _indices, _sprintf, _equal, _hash, cast, _random, _search,
-//               _types, _serialize, _deserialize, _get_iterator, _m_delete, __hash
+//               `==, `<, `>, `!, `[], `[]=, `->, `->=, `(),
+//               _sizeof, _values, _indices, _sprintf, _equal,
+//               _hash, cast, _random, _search, _types,
+//               _serialize, _deserialize, _get_iterator,
+//               _m_delete, __hash, _destruct
 ```
+
+
+## Additional References
+
+- [Idiomatic Pike Guide](references/idiomatic-pike.md) — autodoc, anti-patterns, data structures, naming conventions

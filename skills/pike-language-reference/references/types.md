@@ -14,7 +14,7 @@ int big = 1;
 for (int i = 0; i < 200; i++) big *= 10; // still works, now Gmp.mpz internally
 ```
 
-Constants: `Int.NATIVE_MIN`, `Int.NATIVE_MAX` (platform native range), `Int.MAX` (largest representable, may be bignum).
+Constants: `Int.NATIVE_MIN`, `Int.NATIVE_MAX` (platform native range). `Int.inf`, `Int.Inf`, `Int.NInf` for integer infinity.
 
 ### float
 IEEE 754 double-precision floating point.

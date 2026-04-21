@@ -1,0 +1,25 @@
+name: Commit Lint
+
+on:
+  pull_request:
+
+concurrency:
+  group: commit-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commit-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.yml
+        env:
+          COMMITLINT_CONFIG: '{"extends":["@commitlint/config-conventional"]}'
