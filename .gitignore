@@ -1,4 +1,38 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Source maps
 *.js.map
 *.d.ts.map
+
+# AI artifacts
+.aider*
+.claude/
+.cursor/
+.codex/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/

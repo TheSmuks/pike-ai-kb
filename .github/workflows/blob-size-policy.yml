@@ -1,0 +1,37 @@
+name: Blob Size Policy
+
+on:
+  pull_request:
+
+concurrency:
+  group: blob-size-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-blob-sizes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check for oversized files
+        env:
+          MAX_SIZE: 1048576
+        run: |
+          exit_code=0
+          files=$(git diff --name-only --diff-filter=ACM origin/${{ github.base_ref }}...HEAD)
+          if [ -z "$files" ]; then
+            echo "No files to check."
+            exit 0
+          fi
+          echo "$files" | while read -r file; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file")
+              if [ "$size" -gt "$MAX_SIZE" ]; then
+                echo "::error file=$file::File is $size bytes (limit: $MAX_SIZE)"
+                exit_code=1
+              fi
+            fi
+          done
+          exit $exit_code

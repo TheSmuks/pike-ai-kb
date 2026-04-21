@@ -17,7 +17,7 @@ Reserved keywords: `break`, `case`, `catch`, `class`, `constant`, `continue`, `d
 1_000_000       // underscores for readability
 -1              // negative
 Int.NATIVE_MAX  // platform native int max
-Int.MAX         // maximum representable integer (bignum)
+Int.NATIVE_MAX  // platform native max; use Gmp.mpz for larger
 ```
 
 ### Float
@@ -479,6 +479,23 @@ The program is cloned, then `create()` is called with the arguments.
 constant PI = 3.14159;
 enum { RED, GREEN, BLUE }; // RED=0, GREEN=1, BLUE=2
 enum { A=1, B=2, C=4 };
+```
+
+## typedef
+
+Creates a type alias. Useful for complex or repeated types.
+
+```pike
+typedef array(mapping(string:mixed)) RowList;
+RowList data = ({(["name": "Alice"]), (["name": "Bob"])});
+
+// Common pattern: callback type
+typedef function(string, mixed:void) EventHandler;
+mapping(string:EventHandler) handlers = ([]);
+
+// With enums
+enum TokenKind { TOK_IDENT, TOK_NUMBER, TOK_STRING };
+typedef TokenKind Kind;
 ```
 
 ## this, this_program, this_object()
