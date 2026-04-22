@@ -6,7 +6,7 @@ pike-ai-kb is a dual-purpose npm package: (a) an installable agent skill providi
 
 ## Components
 
-### Skill Layer (`skills/pike-language-reference/`)
+### Skill Layer: pike-language-reference (`skills/pike-language-reference/`)
 
 Static markdown files consumed by AI agents at prompt-construction time. No runtime dependency on the MCP server.
 
@@ -16,28 +16,56 @@ Static markdown files consumed by AI agents at prompt-construction time. No runt
 | `references/stdlib-patterns.md` | Detailed standard library patterns organized by module (6500+ lines, 157+ sections). All examples verified against Pike 8.0.1116 |
 | `references/syntax.md` | Pike syntax reference: control flow, operators, declarations, preprocessor directives |
 | `references/types.md` | Pike type system: value vs reference types, coercion, typeof, type annotations, operators |
+| `references/idiomatic-pike.md` | Idiomatic Pike patterns guide |
+
+### Skill Layer: pike-stdlib-api (`skills/pike-stdlib-api/`)
+
+| File | Purpose |
+|---|---|
+| `SKILL.md` | API reference index for 7 module groups |
+| `references/stdio-api.md` | Stdio module API (544 lines) |
+| `references/adt-api.md` | ADT module API (472 lines) |
+| `references/utilities-api.md` | Utilities API (547 lines) |
+| `references/crypto-api.md` | Crypto module API (357 lines) |
+| `references/protocols-api.md` | Protocols API (345 lines) |
+| `references/concurrent-api.md` | Concurrent API (194 lines) |
+| `references/standards-api.md` | Standards API (146 lines) |
+
+### Skill Layer: pike-debugging (`skills/pike-debugging/`)
+
+| File | Purpose |
+|---|---|
+| `SKILL.md` | Debugging skill definition — error diagnosis workflow |
+| `references/cli-and-introspection.md` | CLI flags and runtime introspection (225 lines) |
+| `references/error-patterns.md` | Error patterns taxonomy with fixes (298 lines) |
 
 ### MCP Server (`src/index.ts`)
 
 Node.js MCP server built on `@modelcontextprotocol/sdk`. Communicates over stdio. Starts by probing the Pike binary and verifying the knowledge base.
 
-**Tools (5):**
+**Tools (7):**
 
 | Tool | Purpose |
 |---|---|
-| `pike-evaluate` | Execute Pike code via stdin piped to `pike -`. Returns stdout/stderr. Configurable timeout (default 30s) |
+| `pike-evaluate` | Execute Pike code via temp file. Returns stdout/stderr. Configurable timeout (default 30s). Optional stdin piped to the process |
 | `pike-check-syntax` | Compile without executing using `compile_string()`. Returns "Syntax OK" or compilation errors |
 | `pike-describe-symbol` | Runtime symbol introspection via `master()->resolv()`. Returns type signature, kind (program/class/object/function/value), and members |
 | `pike-list-modules` | Scans `master()->pike_module_path` for `.pmod`/`.pike` files. Returns sorted list of available modules |
 | `pike-list-methods` | Lists all methods/indices on a resolved class or module |
+| `pike-validate-example` | Validate a Pike code example by compiling and optionally running it. Returns PASS/FAIL |
+| `pike-signature` | Get the exact type signature of a Pike symbol. More precise than pike-describe-symbol |
 
-**Resources (33+):**
+**Resources (44):**
 
-- `pike://ref/{Module}` — Per-module curated sections extracted from `stdlib-patterns.md` for 30 documented modules (Stdio, Array, String, Math, Process, Thread, Crypto, Calendar, Image, Sql, etc.)
+- `pike://ref/{Module}` — Per-module curated sections from `stdlib-patterns.md` for 30 documented modules
 - `pike://ref/stdlib` — Full standard library reference
 - `pike://ref/syntax` — Syntax reference
 - `pike://ref/types` — Type system reference
 - `pike://ref/skill` — Complete SKILL.md content
+- `pike://ref/idiomatic-pike` — Idiomatic Pike patterns guide
+- `pike://ref/api/{module}` — API references for 7 module groups (stdio, adt, concurrent, crypto, protocols, standards, utilities)
+- `pike://ref/debugging/cli` — CLI flags and runtime introspection
+- `pike://ref/debugging/errors` — Error patterns taxonomy with fixes
 
 Resource content is lazily loaded and cached in-process on first access.
 
@@ -54,7 +82,7 @@ Resource content is lazily loaded and cached in-process on first access.
 
 External dependency. Requires Pike >= 8.0 on `PATH`, or the `PIKE_BIN` environment variable pointing to the binary. Used for:
 
-- Code execution (`pike -` for stdin evaluation)
+- Code execution (temp file pattern — Pike 8.0.1116 does not support `pike -`)
 - Syntax checking (`compile_string()` via `pike -e`)
 - Symbol introspection (`master()->resolv()` via `pike -e`)
 - Module discovery (scanning `pike_module_path` via `pike -e`)
@@ -88,6 +116,20 @@ All Pike invocations use `child_process.execFile` with configurable timeouts and
 │  │    references/stdlib-patterns.md     │                │
 │  │    references/syntax.md              │                │
 │  │    references/types.md               │                │
+│  │    references/idiomatic-pike.md      │                │
+│  │  skills/pike-stdlib-api/             │                │
+│  │    SKILL.md                          │                │
+│  │    references/stdio-api.md           │                │
+│  │    references/adt-api.md             │                │
+│  │    references/utilities-api.md       │                │
+│  │    references/crypto-api.md          │                │
+│  │    references/protocols-api.md       │                │
+│  │    references/concurrent-api.md      │                │
+│  │    references/standards-api.md       │                │
+│  │  skills/pike-debugging/              │                │
+│  │    SKILL.md                          │                │
+│  │    references/cli-and-introspection.md│                │
+│  │    references/error-patterns.md      │                │
 │  └──────────────────────────────────────┘                │
 │                                      │                    │
 └──────────────────────────────────────┼────────────────────┘
@@ -113,4 +155,4 @@ All Pike invocations use `child_process.execFile` with configurable timeouts and
 | Build | `tsc` (strict mode) |
 | Transport | stdio (MCP StdioServerTransport) |
 | External runtime | Pike 8.0.1116 |
-| License | MPL-2.0 |
+| License | MIT |

@@ -61,4 +61,4 @@ This project follows [Keep a Changelog](https://keepachangelog.com/). Add entrie
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MPL-2.0 license.
+By contributing, you agree that your contributions will be licensed under the MIT license.
