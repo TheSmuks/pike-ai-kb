@@ -3,11 +3,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { execFile } from "node:child_process";
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { runPike, runPikeCode } from "./runner.js";
+import { extractModuleSections } from "./extractModule.js";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json") as { name: string; version: string };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -16,9 +20,6 @@ const SKILLS_BASE = resolve(__dirname, "../skills");
 const LANG_REF_DIR = join(SKILLS_BASE, "pike-language-reference");
 const STDLIB_API_DIR = join(SKILLS_BASE, "pike-stdlib-api");
 const DEBUG_DIR = join(SKILLS_BASE, "pike-debugging");
-
-// Pike binary — localhost installation, override via env
-const PIKE_BIN = process.env.PIKE_BIN || "pike";
 
 // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -53,83 +54,16 @@ async function getSkill(): Promise<string> {
 }
 
 /**
- * Extract sections from stdlib-patterns.md that mention a module.
- * Returns all ##-level sections whose heading contains the module name.
+/**
+ * Wrapper: extract module sections from the stdlib reference file.
  */
-async function extractModuleSections(moduleName: string): Promise<string> {
-  const content = await getStdlib();
-  const lines = content.split("\n");
-  const results: string[] = [];
-  let inMatch = false;
-
-  for (const line of lines) {
-    if (line.startsWith("## ")) {
-      if (inMatch) results.push(""); // blank line between sections
-      inMatch = line.toLowerCase().includes(moduleName.toLowerCase() + " ")
-        || line.toLowerCase().includes(moduleName.toLowerCase() + " —")
-        || line.toLowerCase().includes(moduleName.toLowerCase() + "(")
-        || line.toLowerCase().endsWith(moduleName.toLowerCase());
-      if (inMatch) results.push(line);
-    } else if (inMatch) {
-      results.push(line);
-    }
-  }
-
-  return results.join("\n").trim()
-    || `No curated reference found for ${moduleName}. Use pike-describe-symbol for runtime introspection.`;
+async function getModuleSections(moduleName: string): Promise<string> {
+  return extractModuleSections(await getStdlib(), moduleName);
 }
-
-// ── Pike execution ──────────────────────────────────────────────────────────
-
-let tmpCounter = 0;
-
-function runPike(
-  args: string[],
-  stdin?: string,
-  timeout = 30_000
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve) => {
-    const proc = execFile(
-      PIKE_BIN,
-      args,
-      { timeout, maxBuffer: 10 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        resolve({
-          stdout: stdout ?? "",
-          stderr: stderr ?? "",
-          exitCode: error && "code" in error ? (error.code as number) : 0,
-        });
-      }
-    );
-    if (stdin && proc.stdin) {
-      proc.stdin.write(stdin);
-      proc.stdin.end();
-    }
-  });
-}
-
-// Run Pike code by writing to a temp file and executing it.
-// Pike 8.0.1116 does not support `pike -` for stdin — it treats `-` as a literal filename.
-async function runPikeCode(
-  code: string,
-  stdin?: string,
-  timeout = 30_000
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const tmpDir = join(tmpdir(), "pike-ai-kb");
-  await mkdir(tmpDir, { recursive: true });
-  const tmpFile = join(tmpDir, `eval-${process.pid}-${++tmpCounter}.pike`);
-  await writeFile(tmpFile, code, "utf-8");
-  try {
-    return await runPike([tmpFile], stdin, timeout);
-  } finally {
-    await rm(tmpFile, { force: true });
-  }
-}
-
 // ── Server ──────────────────────────────────────────────────────────────────
 
 const server = new McpServer(
-  { name: "pike-ai-kb", version: "3.0.0" },
+  { name: pkg.name, version: pkg.version },
   {
     instructions: `Pike language MCP server with curated, runtime-verified knowledge base for AI code generation. Three skill layers: (1) pike-language-reference — syntax, types, stdlib patterns, idiomatic Pike guide; (2) pike-stdlib-api — exact function signatures for 30+ modules; (3) pike-debugging — error diagnosis, CLI introspection, runtime debugging. Provides tools to execute/inspect/validate Pike code. All examples verified against Pike 8.0.1116.`,
   }
@@ -143,12 +77,12 @@ server.tool(
   {
     code: z.string().describe("Pike code to execute (should include int main() or be valid top-level statements)"),
     stdin: z.string().optional().describe("Optional stdin for the Pike process"),
-    timeout: z.number().optional().describe("Timeout in seconds (default 30)"),
+    timeout: z.number().min(1).max(300).optional().describe("Timeout in seconds (default 30)"),
   },
   async ({ code, stdin: codeStdin, timeout }) => {
     const { stdout, stderr, exitCode } = await runPikeCode(
-      codeStdin ? code + "\n" + codeStdin : code,
-      undefined,
+      code,
+      codeStdin,
       (timeout ?? 30) * 1000
     );
     const output = stdout || "(no output)";
@@ -164,8 +98,8 @@ server.tool(
   "Compile Pike code without executing. Uses compile_string which performs full compilation including constant evaluation. Returns compile errors if any.",
   { code: z.string().describe("Pike code to syntax-check") },
   async ({ code }) => {
-    const wrapped = `compile_string(${JSON.stringify(code)}, "check"); write("OK\\n");`;
-    const { stdout, stderr, exitCode } = await runPike(["-e", wrapped], undefined, 10_000);
+    const wrapped = `int main() { compile_string(${JSON.stringify(code)}, "check"); write("OK\\n"); return 0; }`;
+    const { stdout, stderr, exitCode } = await runPikeCode(wrapped, undefined, 10_000);
     if (exitCode === 0 && stdout.trim() === "OK") {
       return { content: [{ type: "text" as const, text: "Syntax OK" }] };
     }
@@ -188,7 +122,7 @@ mixed val;
 catch { val = master()->resolv(sym); };
 if (!val && has_prefix(sym, "Stdio.") && !has_prefix(sym, "Stdio._"))
   catch { val = master()->resolv("_Stdio." + sym[6..]); };
-if (undefinedp(val) || val == 0) { write("Symbol not found: " + sym + "\\n"); exit(0); }
+if (undefinedp(val) || val == 0) { write("Symbol not found: " + sym + "\\n"); exit(1); }
 mapping info = (["symbol": sym, "type": typeof(val)]);
 if (programp(val)) { info["kind"] = "program/class"; info["methods"] = sort(indices(val)); }
 else if (objectp(val)) { info["kind"] = "object"; info["methods"] = sort(indices(val)); }
@@ -212,18 +146,18 @@ server.tool(
   async () => {
     const code = `
 mapping mods = ([]);
-void scan(string dir) {
-  array(string) e = get_dir(dir) || ({});
+foreach(master()->pike_module_path;; string p) {
+  if (!Stdio.is_dir(p)) continue;
+  array(string) e = get_dir(p) || ({});
   foreach(e;; string f) {
-    string full = combine_path(dir, f);
+    string full = combine_path(p, f);
     if (has_suffix(f, ".pmod") || has_suffix(f, ".pike"))
-      mods[has_suffix(f, ".pmod") ? f[..sizeof(f)-6] : f[..sizeof(f)-6]] = 1;
+      mods[f[..sizeof(f)-6]] = 1;
     else if (Stdio.is_dir(full) &&
              (Stdio.exist(full+"/module.pmod") || Stdio.exist(full+"/module.pike")))
       mods[f] = 1;
   }
 }
-foreach(master()->pike_module_path;; string p) if (Stdio.is_dir(p)) scan(p);
 write(sort(indices(mods)) * "\\n");
 `;
     const { stdout, stderr, exitCode } = await runPike(["-e", code], undefined, 15_000);
@@ -254,18 +188,18 @@ if (programp(val)) {
     write("Methods: %O\\n", sort(indices(val)));
   } else {
     write("Class %s methods:\\n", sym);
-    sort(indices(inst))->write("%s\\n");
+    foreach(sort(indices(inst));; string m) write("%s\n", m);
   }
 } else if (objectp(val)) {
   write("Object %s members:\\n", sym);
-  sort(indices(val))->write("%s\\n");
+  foreach(sort(indices(val));; string m) write("%s\n", m);
 }
 `;
     const { stdout, stderr, exitCode } = await runPike(["-e", code], undefined, 10_000);
-    if (exitCode !== 0 && !stdout.trim()) {
-      return { content: [{ type: "text" as const, text: `Failed: ${stderr}` }], isError: true };
+    if (exitCode !== 0) {
+      return { content: [{ type: "text" as const, text: `Not found or failed: ${stdout.trim() || stderr}` }], isError: true };
     }
-    return { content: [{ type: "text" as const, text: stdout.trim() || stderr.trim() }] };
+    return { content: [{ type: "text" as const, text: stdout.trim() }] };
   }
 );
 
@@ -276,7 +210,7 @@ server.tool(
     code: z.string().describe("Pike code to validate"),
     run: z.boolean().optional().describe("Also run the code (default: compile-only)"),
     stdin: z.string().optional().describe("Stdin for the Pike process (only when run=true)"),
-    timeout: z.number().optional().describe("Timeout in seconds (default 10)"),
+    timeout: z.number().min(1).max(300).optional().describe("Timeout in seconds (default 10)"),
   },
   async ({ code, run, stdin: codeStdin, timeout }) => {
     const timeoutMs = (timeout ?? 10) * 1000;
@@ -296,7 +230,7 @@ server.tool(
     }
 
     // Run the code via temp file (pike - does not read stdin in 8.0.1116)
-    const runResult = await runPikeCode(codeStdin ? code + "\n" + codeStdin : code, undefined, timeoutMs);
+    const runResult = await runPikeCode(code, codeStdin, timeoutMs);
     if (runResult.exitCode !== 0) {
       return {
         content: [{ type: "text" as const, text: `FAIL: Runtime error (exit ${runResult.exitCode})\n${runResult.stderr || runResult.stdout}` }],
@@ -376,7 +310,7 @@ for (const mod of documentedModules) {
     `pike://ref/${mod}`,
     { description: `Curated Pike ${mod} module reference (runtime-verified)`, mimeType: "text/markdown" },
     async (uri) => ({
-      contents: [{ uri: uri.href, text: await extractModuleSections(mod) }],
+      contents: [{ uri: uri.href, text: await getModuleSections(mod) }],
     })
   );
 }
@@ -581,7 +515,7 @@ server.prompt(
 async function main() {
   const { exitCode, stdout } = await runPike(["--version"], undefined, 5000);
   if (exitCode !== 0) {
-    console.error(`Warning: Pike binary "${PIKE_BIN}" not found. Set PIKE_BIN env var.`);
+    console.error(`Warning: Pike binary not found. Set PIKE_BIN env var.`);
   } else {
     console.error(`Pike found: ${stdout.trim()}`);
   }

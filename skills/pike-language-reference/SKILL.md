@@ -317,4 +317,7 @@ class Vec {
 
 ## Additional References
 
+- [Syntax Reference](references/syntax.md) — control flow, operators, declarations, preprocessor directives
+- [Types Reference](references/types.md) — type system, coercion, typeof, type annotations
+- [Standard Library Patterns](references/stdlib-patterns.md) — 157 sections, 130+ modules, runtime-verified examples
 - [Idiomatic Pike Guide](references/idiomatic-pike.md) — autodoc, anti-patterns, data structures, naming conventions

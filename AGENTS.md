@@ -26,15 +26,36 @@ Requirements: Node.js >= 20, TypeScript 5.x.
 
 ```
 src/
-  index.ts                       # MCP server entry — 5 tools, resources, prompts
+  index.ts                       # MCP server entry — 7 tools, resources, prompts
+  runner.ts                      # Pike execution helpers (runPike, runPikeCode)
+  extractModule.ts               # Module section extractor for stdlib reference
+  tools.test.ts                  # Test suite (102 tests)
 
 skills/
-  pike-language-reference/       # Agent skill
-    SKILL.md                     # Core rules, gotchas, quick-reference
-    references/                  # Detailed reference files
-      stdlib-patterns.md         # 6500+ lines, 130+ modules
-      syntax.md                  # Control flow, operators, declarations
-      types.md                   # Type system, coercion, typeof
+  pike-language-reference/       # Agent skill — syntax, types, stdlib patterns
+    SKILL.md                     # Core rules, gotchas, quick-reference (322 lines)
+    references/
+      stdlib-patterns.md         # 6,574 lines, 157 sections, 130+ modules
+      syntax.md                  # 913 lines, control flow, operators, declarations
+      types.md                   # 326 lines, type system, coercion, typeof
+      idiomatic-pike.md          # 603 lines, idiomatic patterns, anti-patterns
+
+  pike-stdlib-api/               # Agent skill — exact API signatures
+    SKILL.md                     # API reference index (36 lines)
+    references/
+      stdio-api.md               # 544 lines
+      adt-api.md                 # 472 lines
+      utilities-api.md           # 547 lines
+      crypto-api.md              # 357 lines
+      protocols-api.md           # 345 lines
+      concurrent-api.md          # 194 lines
+      standards-api.md           # 146 lines
+
+  pike-debugging/                # Agent skill — error diagnosis, CLI introspection
+    SKILL.md                     # Debugging skill definition (191 lines)
+    references/
+      cli-and-introspection.md   # 225 lines
+      error-patterns.md          # 298 lines
 
 dist/                            # Compiled output (gitignored)
 ```

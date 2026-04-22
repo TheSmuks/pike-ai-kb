@@ -1,0 +1,62 @@
+import { execFile } from "node:child_process";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+// Pike binary — localhost installation, override via env
+const PIKE_BIN = process.env.PIKE_BIN || "pike";
+
+export interface PikeResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/**
+ * Execute Pike with given args, optionally piping stdin.
+ * Returns stdout, stderr, and exitCode.
+ */
+export function runPike(
+  args: string[],
+  stdin?: string,
+  timeout = 30_000
+): Promise<PikeResult> {
+  return new Promise((resolve) => {
+    const proc = execFile(
+      PIKE_BIN,
+      args,
+      { timeout, maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        resolve({
+          stdout: stdout ?? "",
+          stderr: stderr ?? "",
+          exitCode: error ? (typeof error.code === "number" ? error.code : -1) : 0,
+        });
+      }
+    );
+    if (stdin && proc.stdin) {
+      proc.stdin.on("error", () => {});
+      proc.stdin.write(stdin);
+      proc.stdin.end();
+    }
+  });
+}
+
+/**
+ * Run Pike code by writing to a temp file and executing it.
+ * Pike 8.0.1116 does not support `pike -` for stdin — it treats `-` as a literal filename.
+ */
+export async function runPikeCode(
+  code: string,
+  stdin?: string,
+  timeout = 30_000
+): Promise<PikeResult> {
+  const tmpDir = await mkdtemp(join(tmpdir(), "pike-ai-kb-"));
+  const tmpFile = join(tmpDir, "eval.pike");
+  try {
+    await writeFile(tmpFile, code, "utf-8");
+    return await runPike([tmpFile], stdin, timeout);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
