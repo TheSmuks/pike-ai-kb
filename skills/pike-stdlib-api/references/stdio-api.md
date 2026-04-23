@@ -7,7 +7,7 @@
 ```pike
 Stdio.read_file(string filename, int|void start, int|void len) -> string
 ```
-Read a file into a string. `start` is 1-based line number to start from. `len` is number of lines (if start given) or bytes.
+Read a file into a string. `start` is 0-based line number to start from. `len` is number of lines (if start given) or bytes.
 
 ```pike
 Stdio.read_bytes(string filename, int|void start, int|void len) -> string
@@ -59,12 +59,12 @@ Returns non-zero if path is a symbolic link.
 ```pike
 Stdio.file_size(string path) -> int
 ```
-Returns file size in bytes, -1 if directory, -2 if not found.
+Returns file size in bytes, -2 if directory, -1 if not found.
 
 ```pike
 Stdio.mkdirhier(string path, int|void mode) -> int
 ```
-Create directory and all parent directories. Returns 0 on success.
+Create directory and all parent directories. Returns 1 on success.
 
 ```pike
 Stdio.recursive_rm(string path) -> void
@@ -84,16 +84,11 @@ Simplify a file path by resolving `.` and `..` components.
 ### Networking
 
 ```pike
-Stdio.sendfile(mixed from, Stdio.File to, ...) -> void
+Stdio.sendfile(array(string) headers, Stdio.File from, int offset, int len, array(string) trailers, Stdio.File to, function|void callback, mixed ... args) -> object
 ```
-Zero-copy file transfer. `from` can be a file object or offset/length pair.
+Zero-copy file transfer. Sends headers, then `len` bytes from `from` at `offset`, then trailers, to `to`. If callback is provided, operation is non-blocking; callback receives `(mixed ... args)` on completion. Returns a call-out object for non-blocking mode.
 
 ### Directory
-
-```pike
-Stdio.get_dir(string|void path) -> array(string)
-```
-List directory contents. Returns array of filenames. Defaults to current directory.
 
 ```pike
 Stdio.get_all_active_fd() -> array(int)
@@ -103,9 +98,9 @@ Returns array of all active file descriptors.
 ### Other
 
 ```pike
-Stdio.gethostip(string|void host) -> array(string)
+Stdio.gethostip(string|void host) -> mapping
 ```
-Get IP addresses for a host.
+Get IP addresses for a host. Returns a mapping of network interface names to IP data.
 
 ```pike
 Stdio.perror(string message) -> void
@@ -123,7 +118,7 @@ The primary file I/O class. Inherits `Stdio.Fd`.
 ```pike
 Stdio.File()->open(string filename, string mode, int|void permissions) -> int
 ```
-Open file. `mode` is "r", "w", "a", "rct" etc. Returns 1 on success.
+Open file. `mode` is "r", "w", "wat", "rct" etc. Returns 1 on success. Append requires "wat" (write+append+truncate) not "a" alone.
 
 ```pike
 Stdio.File()->close(string|void how) -> int
@@ -170,7 +165,7 @@ Assign another file object's fd to this one.
 ```pike
 Stdio.File()->read(int|void nbytes, bool|void now) -> string
 ```
-Read up to `nbytes` from file. Returns data string or 0 on EOF.
+Read up to `nbytes` from file. Returns data string; empty string `""` at EOF.
 
 ```pike
 Stdio.File()->read_oob(int|void nbytes, bool|void now) -> string
@@ -212,9 +207,9 @@ Send a file descriptor over a Unix domain socket (ancillary data).
 ### Positioning
 
 ```pike
-Stdio.File()->seek(int pos, string|void how) -> int
+Stdio.File()->seek(int pos, int|void how) -> int
 ```
-Set file position. `how` is "SET", "CUR", or "END".
+Set file position. `how` is `Stdio.SEEK_SET`, `Stdio.SEEK_CUR`, or `Stdio.SEEK_END`. `seek(pos)` without `how` defaults to `Stdio.SEEK_SET`.
 
 ```pike
 Stdio.File()->tell() -> int
@@ -249,9 +244,9 @@ Stdio.File()->is_open() -> int
 Returns non-zero if file is open.
 
 ```pike
-Stdio.File()->is_file() -> int
+Stdio.is_file(string path) -> int
 ```
-Returns non-zero if fd refers to a regular file.
+Returns non-zero if path is a regular file. Standalone function, not a method on Stdio.File.
 
 ```pike
 Stdio.File()->errno() -> int
@@ -337,7 +332,7 @@ Non-blocking lock attempt. Returns 0 if lock unavailable.
 ```pike
 Stdio.File()->dup() -> Stdio.File
 Stdio.File()->dup2(Stdio.File|int to) -> Stdio.File
-Stdio.File()->take_fd() -> int
+Stdio.File()->take_fd(int new_fd) -> int
 Stdio.File()->release_fd() -> int
 ```
 
@@ -428,7 +423,6 @@ Returns `(["data": string, "ip": string, "port": int])`.
 ```pike
 Stdio.UDP()->set_nonblocking(function(mapping:void)|void read_callback) -> Stdio.UDP
 Stdio.UDP()->set_blocking() -> Stdio.UDP
-Stdio.UDP()->set_buffer_size(int|void size) -> Stdio.UDP
 Stdio.UDP()->enable_broadcast() -> Stdio.UDP
 Stdio.UDP()->set_multicast_ttl(int ttl) -> Stdio.UDP
 Stdio.UDP()->add_membership(string group, string|void iface) -> Stdio.UDP
@@ -450,16 +444,14 @@ Stdio.Buffer(int size)
 
 ```pike
 Stdio.Buffer()->add(string data) -> Stdio.Buffer
-Stdio.Buffer()->write(string data) -> Stdio.Buffer
 Stdio.Buffer()->read(int bytes) -> string
-Stdio.Buffer()->read_hbuf(int bytes) -> string
+Stdio.Buffer()->read_hbuffer(int len) -> Stdio.Buffer
 Stdio.Buffer()->output_to(Stdio.File f, int|void nbytes) -> int
 Stdio.Buffer()->input_from(Stdio.File f, int|void nbytes) -> int
 Stdio.Buffer()->read_buffer(int len) -> Stdio.Buffer
-Stdio.Buffer()->unread(string data) -> void
+Stdio.Buffer()->unread(int nbytes) -> void
 Stdio.Buffer()->consume(int nbytes) -> void
 Stdio.Buffer()->trim() -> void
-Stdio.Buffer()->__offset() -> int
 ```
 
 Integer read/write (big-endian):
@@ -469,19 +461,16 @@ Stdio.Buffer()->read_int(int size) -> int
 Stdio.Buffer()->read_int8() -> int
 Stdio.Buffer()->read_int16() -> int
 Stdio.Buffer()->read_int32() -> int
-Stdio.Buffer()->read_int64() -> int
-Stdio.Buffer()->write_int(int size, int value) -> Stdio.Buffer
+Stdio.Buffer()->add_int(int value, int size) -> Stdio.Buffer
 Stdio.Buffer()->add_int8(int v) -> Stdio.Buffer
 Stdio.Buffer()->add_int16(int v) -> Stdio.Buffer
 Stdio.Buffer()->add_int32(int v) -> Stdio.Buffer
-Stdio.Buffer()->add_int64(int v) -> Stdio.Buffer
 ```
 
 String operations:
 
 ```pike
 Stdio.Buffer()->read_cstring() -> string
-Stdio.Buffer()->add_cstring(string s) -> Stdio.Buffer
 Stdio.Buffer()->read_hstring(int width) -> string
 Stdio.Buffer()->add_hstring(string s, int width) -> Stdio.Buffer
 ```
@@ -490,8 +479,7 @@ Configuration:
 
 ```pike
 Stdio.Buffer()->set_error_mode(int|function mode) -> Stdio.Buffer
-Stdio.Buffer()->set_read_callback(function(mixed, Stdio.Buffer:void) cb) -> Stdio.Buffer
-Stdio.Buffer()->sizeof() -> int
+sizeof(Stdio.Buffer) -> int
 ```
 
 ---
@@ -533,7 +521,7 @@ Iterator over lines of a Stdio.File.
 Stdio.File()->line_iterator(int|void trim) -> Stdio.LineIterator
 ```
 
-Implements the Iterator interface. `trim` controls trailing newline removal.
+Implements the Iterator interface. `trim` parameter has no observable effect on output.
 
 ---
 

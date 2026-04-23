@@ -15,8 +15,8 @@ Represents a value that will become available in the future. Futures are immutab
 Futures are typically obtained from `Concurrent.Promise()->future()` or returned by async APIs. You can also create resolved futures:
 
 ```pike
-Concurrent.Future(mixed value)          // Already-resolved future
-Concurrent.Future(function(mixed:function) eval)  // From evaluation function
+Concurrent.Future()                                  // Pending future (0-arg constructor)
+Concurrent.resolve(mixed value)                      // Already-resolved future
 ```
 
 ### Chaining
@@ -73,9 +73,9 @@ Concurrent.Future()->get() -> mixed
 Block until resolved, then return the value (or throw on failure).
 
 ```pike
-Concurrent.Future()->wait() -> Concurrent.Future
+Concurrent.Future()->wait() -> Concurrent.Promise
 ```
-Block until resolved. Returns self for chaining.
+Block until resolved. Returns the underlying Promise (not the Future itself).
 
 ---
 
@@ -90,55 +90,48 @@ Concurrent.Promise()
 ### Resolution
 
 ```pike
-Concurrent.Promise()->success(mixed value) -> void
+Concurrent.Promise()->success(mixed value) -> this_program
 ```
-Resolve the promise with a value. Throws if already resolved.
+Resolve the promise with a value. Returns the Promise itself. Throws if already resolved.
 
 ```pike
-Concurrent.Promise()->failure(mixed value) -> void
+Concurrent.Promise()->failure(mixed value) -> this_program
 ```
-Reject the promise with a failure value. Throws if already resolved.
+Reject the promise with a failure value. Returns the Promise itself. Throws if already resolved.
 
 ```pike
-Concurrent.Promise()->try_success(mixed value) -> int
+Concurrent.Promise()->try_success(mixed value) -> this_program
 ```
-Attempt to resolve. Returns 1 on success, 0 if already resolved.
+Attempt to resolve. Returns the Promise itself. Does not throw if already resolved.
 
 ```pike
-Concurrent.Promise()->try_failure(mixed value) -> int
+Concurrent.Promise()->try_failure(mixed value) -> this_program
 ```
-Attempt to reject. Returns 1 on success, 0 if already resolved.
+Attempt to reject. Returns the Promise itself. Does not throw if already resolved.
 
 ### Query
 
 ```pike
-Concurrent.Promise()->is_done() -> int
+Concurrent.Promise()->state -> int
 ```
-Returns non-zero if the promise has been resolved or rejected.
+State of the promise: `-1` (no future yet), `0` (pending), `1` (fulfilled), `2` (rejected).
 
 ### Access
 
 ```pike
 Concurrent.Promise()->future() -> Concurrent.Future
-Concurrent.Promise()->get_future() -> Concurrent.Future
 ```
-Return the associated Future. Both methods are equivalent.
+Return the associated Future.
 
 ---
 
 ## Concurrent.AggregateState
 
-Tracks the state of aggregated futures (e.g., from `Concurrent.results`).
+Internal class tracking the state of aggregated futures (e.g., from `Concurrent.results`).
+Not intended for direct construction — use combinators like `Concurrent.results()`, `Concurrent.fold()` instead.
 
-```pike
-Concurrent.AggregateState(array(Concurrent.Future) futures)
-```
+Key members: `results` (array), `accumulator`, `fold_fun`, `extra`, `max_failures`, `min_failures`, `materialise`.
 
-```pike
-Concurrent.AggregateState()->get_results() -> array
-Concurrent.AggregateState()->get_failures() -> array
-Concurrent.AggregateState()->is_done() -> int
-```
 
 ---
 
@@ -163,14 +156,8 @@ Returns a Future that resolves when the first input Future resolves (success or 
 ```pike
 Concurrent.all(array(Concurrent.Future) futures) -> Concurrent.Future
 ```
-Alias for `Concurrent.results`. Resolves when all succeed.
+Equivalent to `Concurrent.results` — resolves when all futures succeed. Separate function objects.
 
-### Concurrent.any
-
-```pike
-Concurrent.any(array(Concurrent.Future) futures) -> Concurrent.Future
-```
-Resolves when the first Future succeeds. Fails only if all Futures fail.
 
 ### Concurrent.race
 
@@ -179,12 +166,12 @@ Concurrent.race(array(Concurrent.Future) futures) -> Concurrent.Future
 ```
 Resolves or rejects when the first Future settles (whichever comes first).
 
-### Concurrent.zip
+### Future()->zip
 
 ```pike
-Concurrent.zip(Concurrent.Future ... futures) -> Concurrent.Future
+Concurrent.Future()->zip(Concurrent.Future ... futures) -> Concurrent.Future
 ```
-Combine futures into a tuple. Resolves to an array of values.
+Combine this future with others into a tuple. Resolves to an array of values.
 
 ### Concurrent.fold
 

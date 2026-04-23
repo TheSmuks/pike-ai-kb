@@ -10,12 +10,12 @@ Protocols.HTTP.get_url(string url, mapping|void headers, ... ) -> Protocols.HTTP
 Synchronous GET request. Returns the Query object after completion.
 
 ```pike
-Protocols.HTTP.post_url(string url, mapping|void headers, string|void data) -> Protocols.HTTP.Query
+Protocols.HTTP.post_url(string url, mapping|string headers_or_data, mapping|void query_variables) -> Protocols.HTTP.Query
 ```
 Synchronous POST request.
 
 ```pike
-Protocols.HTTP.put_url(string url, mapping|void headers, string|void data) -> Protocols.HTTP.Query
+Protocols.HTTP.put_url(string url, string|void data, mapping|void headers, mapping|void query_variables) -> Protocols.HTTP.Query
 ```
 Synchronous PUT request.
 
@@ -25,14 +25,14 @@ Protocols.HTTP.delete_url(string url, mapping|void headers) -> Protocols.HTTP.Qu
 Synchronous DELETE request.
 
 ```pike
-Protocols.HTTP.request_url(string url, string method, mapping|void headers, string|void data) -> Protocols.HTTP.Query
+Protocols.HTTP.do_method(string method, string url, mapping|void headers, mapping|void query_variables, Protocols.HTTP.Query|void existing_query, string|void data) -> Protocols.HTTP.Query
 ```
-Synchronous request with arbitrary method.
+Synchronous request with arbitrary method. Uses the shared `do_method` internally for all HTTP verb functions.
 
 ```pike
-Protocols.HTTP.async_request(string method, string url, mapping|void headers, string|void data, function|void success_cb, function|void failure_cb) -> Protocols.HTTP.Query
+Protocols.HTTP.Query()->async_request(string method, string url, mapping|void headers, string|void data, function|void success_cb, function|void failure_cb) -> Protocols.HTTP.Query
 ```
-Asynchronous HTTP request. Returns immediately; callbacks invoked on completion.
+Asynchronous HTTP request on a Query object. Returns immediately; callbacks invoked on completion.
 
 ### Protocols.HTTP.Query
 
@@ -44,8 +44,9 @@ Protocols.HTTP.Query()
 
 ```pike
 Protocols.HTTP.Query()->set_callbacks(function success, function failure) -> void
-Protocols.HTTP.Query()->fetch(string url) -> int
-Protocols.HTTP.Query()->objectp() -> int
+Protocols.HTTP.Query()->async_fetch(string url) -> int
+Protocols.HTTP.Query()->sync_request(string method, string url, mapping|void headers, string|void data) -> object
+Protocols.HTTP.Query()->async_request(string method, string url, mapping|void headers, string|void data, function|void success_cb, function|void failure_cb) -> Protocols.HTTP.Query
 ```
 
 #### Response Access
@@ -54,16 +55,12 @@ Protocols.HTTP.Query()->objectp() -> int
 Protocols.HTTP.Query()->status -> int          // HTTP status code
 Protocols.HTTP.Query()->headers -> mapping     // Response headers
 Protocols.HTTP.Query()->data -> string         // Response body
-Protios.HTTP.Query()->ok -> int                // Non-zero if 2xx
+Protocols.HTTP.Query()->ok -> int                // Non-zero if 2xx
 ```
 
 #### Request Configuration
 
 ```pike
-Protocols.HTTP.Query()->request_headers -> mapping
-Protocols.HTTP.Query()->request_method -> string
-Protocols.HTTP.Query()->request_data -> string
-Protocols.HTTP.Query()->follow_redirects -> int
 Protocols.HTTP.Query()->timeout -> int
 ```
 
@@ -90,14 +87,13 @@ HTTPS server port.
 Passed to the server callback.
 
 ```pike
-Protocols.HTTP.Server.Request->request_method -> string
+Protocols.HTTP.Server.Request->request_type -> string
 Protocols.HTTP.Server.Request->request_headers -> mapping
-Protocols.HTTP.Server.Request->request_data -> string
-Protocols.HTTP.Server.Request->query_variables -> mapping
+Protocols.HTTP.Server.Request->body_raw -> string
+Protocols.HTTP.Server.Request->query -> mapping
 Protocols.HTTP.Server.Request->variables -> mapping
 Protocols.HTTP.Server.Request->not_query -> string
-Protocols.HTTP.Server.Request->real_url -> string
-Protocols.HTTP.Server.Request->remoteaddr -> string
+Protocols.HTTP.Server.Request->get_ip() -> string
 ```
 
 Response mapping format:
@@ -156,12 +152,9 @@ SSL.Context()
 ```pike
 SSL.Context()->add_cert(string|Crypto.RSA.State key, array(string) certs, array(string)|void extra_certs) -> void
 SSL.Context()->set_authorities(array(string) ca_certs) -> void
-SSL.Context()->set_min_protocol_version(int version) -> void
-SSL.Context()->set_max_protocol_version(int version) -> void
-SSL.Context()->get_min_protocol_version() -> int
-SSL.Context()->get_max_protocol_version() -> int
+SSL.Context()->min_version -> int
+SSL.Context()->max_version -> int
 SSL.Context()->preferred_suites -> array
-SSL.Context()->configure(array(int) suites, int|void min_version) -> void
 ```
 
 ### SSL.File
@@ -173,7 +166,7 @@ SSL.File(Stdio.File stream, SSL.Context ctx)
 ```
 
 ```pike
-SSL.File()->connect(string host, int port) -> int
+SSL.File()->connect(string|void dest_addr, SSL.Session|void session) -> SSL.Session
 SSL.File()->is_open() -> int
 SSL.File()->read(int|void nbytes) -> string
 SSL.File()->write(string data) -> int
@@ -181,9 +174,8 @@ SSL.File()->close() -> void
 SSL.File()->set_blocking() -> void
 SSL.File()->set_nonblocking(function rcb, function wcb, function ccb) -> void
 SSL.File()->query_connection() -> SSL.Connection
-SSL.File()->peer_certificate_chain() -> array(string)
-SSL.File()->get_peer_cert_issuer() -> string
-SSL.File()->get_peer_cert_subject() -> string
+SSL.File()->get_peer_certificates() -> array(string)
+SSL.File()->get_peer_certificate_info() -> mapping
 ```
 
 ### SSL.Port
@@ -204,20 +196,12 @@ SSL.Port()->accept() -> SSL.File
 Represents an SSL connection state.
 
 ```pike
-SSL.Connection(SSL.Context ctx, int is_server, string|void remote_host)
+SSL.Connection(SSL.Context ctx)
 ```
 
 ### SSL.Constants
 
 SSL/TLS protocol version constants and cipher suite definitions.
-
-### SSL.https
-
-```pike
-SSL.https(string url) -> string
-```
-Fetch a URL over HTTPS, return body.
-
 ---
 
 ## Parser.HTML
@@ -230,7 +214,7 @@ Parser.HTML()
 
 ```pike
 Parser.HTML()->add_tag(string tag, function callback) -> void
-Parser.HTML()->add_container_tag(string tag, function callback) -> void
+Parser.HTML()->add_container(string tag, function callback) -> void
 Parser.HTML()->add_quote_tag(string tag, function callback, string|void end) -> void
 Parser.HTML()->feed(string data) -> string
 Parser.HTML()->finish() -> string
@@ -238,7 +222,7 @@ Parser.HTML()->set_extra(mixed ... extra) -> void
 Parser.HTML()->clone() -> Parser.HTML
 ```
 
-Tag callback signature: `function(string tag, mapping attrs, string content|void ... extra)`
+Tag callback signature: `function(Parser.HTML parser, mapping attrs, mixed ... extra)`. Container callback: `function(Parser.HTML parser, mapping attrs, string content, mixed ... extra)`. The first argument is the Parser.HTML object itself; the tag name is not passed.
 
 ---
 
@@ -247,13 +231,13 @@ Tag callback signature: `function(string tag, mapping attrs, string content|void
 CSV parser and encoder.
 
 ```pike
-Parser.CSV(string|void data, string|void separator, string|void quote)
+Parser.CSV(string|void data)
 ```
+
+Uses `setformat(array|mapping)` to define column structure. Does not accept separator/quote as simple string parameters.
 
 ```pike
 Parser.CSV()->fetch() -> array(string)|zero
-Parser.CSV()->get_all() -> array(array(string))
-```
 
 ---
 
@@ -267,8 +251,9 @@ Parser.XML.Simple()
 
 ```pike
 Parser.XML.Simple()->parse(string data, function callback) -> mixed
-Parser.XML.Simple()->parse_tag(string tag, mapping attrs, string content|void) -> mixed
 ```
+
+Parse callback signature: `function(string type, string|zero name, mapping|zero attrs, array|string|zero content, mapping(string:mixed) extra)`. The `type` is `"<"` for open tag, `""` for text content, `">"` for close tag.
 
 ### Parser.XML.Validating
 
@@ -291,7 +276,7 @@ Parser.Tabular(string format)
 Pike source code tokenizer.
 
 ```pike
-Parser.Pike.Token(string text, string type)
+Parser.Pike.Token(string text, int|void line)
 ```
 
 ---
@@ -301,7 +286,7 @@ Parser.Pike.Token(string text, string type)
 C code tokenizer/parser.
 
 ```pike
-Parser.C.Token(string text, string type)
+Parser.C.Token(string text, int|void line)
 Parser.C.UnterminatedStringError
 ```
 
@@ -340,6 +325,6 @@ LALR(1) parser generator.
 ```pike
 Parser.LR.Parser(array rules)
 Parser.LR.Rule(int symbol, array symbols, function|void action)
-Parser.LR.Priority(int value, string assoc)
+Parser.LR.Priority(int value, int assoc)
 Parser.LR.ErrorHandler
 ```

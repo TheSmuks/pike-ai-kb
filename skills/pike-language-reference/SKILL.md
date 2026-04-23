@@ -16,7 +16,7 @@ Pike is a dynamic, bytecode-compiled, object-oriented language with C-like synta
 
 - **Value types** (int, float, string) are copied on assignment.
 - **Reference types** (array, mapping, multiset, object, program, function) share underlying data on assignment.
-- **Strings are immutable** — all string operations return new strings.
+- **Strings use copy-on-write**: assigning to a new variable creates an independent copy, but individual characters can be modified via index assignment (`s[0] = 'H'`). Use `String.Buffer` for efficient concatenation.
 - **Arrays, mappings, multisets, objects, functions, programs, and types use identity comparison** with `==`. Use `equal()` for structural/deep comparison.
 - **Integer division rounds toward negative infinity** (floor division), not toward zero.
 - **switch cases DO fall through** — use `break` to prevent (like C/Java).
@@ -42,14 +42,12 @@ mapping m = (["key": "value"]);
 multiset s = (< "a", "b" >);
 ```
 
-### Rule: String Immutability
+### Rule: String Mutation and Concatenation
 
-Strings cannot be modified in place. All operations produce new strings. Use `String.Buffer` for efficient concatenation.
+Strings use copy-on-write: assigning a string to another variable creates an independent copy, so index assignment on one variable does not affect the other. However, `String.Buffer` should still be used for efficient concatenation in loops.
 
 WRONG:
 ```pike
-string s = "hello";
-s[0] = 'H'; // runtime error: strings are immutable
 string result = "";
 for (int i = 0; i < 1000; i++)
   result += "x"; // O(n^2): allocates new string each iteration

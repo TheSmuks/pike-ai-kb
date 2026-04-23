@@ -4,15 +4,14 @@
 
 ```pike
 String.trim_whites(string s) -> string
-String.trim(string s) -> string
 ```
 Remove leading and trailing whitespace.
 
 ```pike
-String.lower_case(string s) -> string
-String.upper_case(string s) -> string
+lower_case(string s) -> string
+upper_case(string s) -> string
 ```
-Case conversion (locale-independent ASCII).
+Case conversion (locale-independent ASCII). These are global functions, not in the String module.
 
 ```pike
 String.common_prefix(array(string) strs) -> string
@@ -30,9 +29,9 @@ String.width(string s) -> int
 Maximum character width (8, 16, or 32 bits).
 
 ```pike
-String.split(string s, string|void sep) -> array(string)
+String.SplitIterator(string s, int|array(int)|multiset(int) separators)
 ```
-Split string by separator. Default splits on whitespace.
+Iterate over string split by separator characters. For simple splitting, use the `/` operator: `"a,b,c"/","` → `({"a","b","c"})`.
 
 ---
 
@@ -54,22 +53,18 @@ Array.uniq(array a) -> array
 Remove duplicates, preserving order.
 
 ```pike
-Array.diff(array a, array b) -> array(array)
+Array.diff(array a, array b) -> array(array(array))
 ```
-Compute longest common subsequence diff. Returns `(["data": array, "offset": int])`.
+Compute longest common subsequence diff. Returns `({a_segments, b_segments})` — two parallel arrays of array segments.
+
 
 ```pike
-Array.intersect(array a, array b) -> array
+Array.permute(array a, int i) -> array
 ```
-Elements common to both arrays.
+Return the i-th permutation of array.
 
 ```pike
-Array.permute(array a) -> array(array)
-```
-All permutations.
-
-```pike
-Array.every(array a, function(mixed:int) test) -> int
+Array.all(array a, function(mixed:int) test) -> int
 ```
 True if test passes for all elements.
 
@@ -79,14 +74,14 @@ Array.any(array a, function(mixed:int) test) -> int
 True if test passes for any element.
 
 ```pike
-Array.search(array a, mixed value) -> int
+search(array a, mixed value) -> int
 ```
-Find index of value, -1 if not found.
+Find index of value in array, -1 if not found. Global function.
 
 ```pike
-Array.sort(array a, function|void cmp) -> array
+Array.sort(array a, array ... extra) -> array
 ```
-Sort (returns new array).
+Sort array in place and return it. For custom comparison, use `Array.sort_array(array, function)`.
 
 ```pike
 Array.shuffle(array a) -> array
@@ -95,8 +90,8 @@ Randomly reorder array.
 
 ```pike
 Array.sum(array(int|float) a) -> int|float
-Array.min(array a) -> mixed
-Array.max(array a) -> mixed
+min(mixed ... args) -> mixed    // global function
+max(mixed ... args) -> mixed    // global function
 ```
 
 ---
@@ -106,17 +101,18 @@ Array.max(array a) -> mixed
 ### Basic Functions
 
 ```pike
-Math.sqrt(float|int x) -> float
-Math.sin(float x) -> float
-Math.cos(float x) -> float
-Math.tan(float x) -> float
-Math.pow(float|int base, float|int exp) -> float
-Math.log(float x) -> float
-Math.exp(float x) -> float
-Math.floor(float x) -> float
-Math.ceil(float x) -> float
-Math.round(float x) -> float
+sqrt(float|int x) -> float
+sin(float x) -> float
+cos(float x) -> float
+tan(float x) -> float
+pow(float|int base, float|int exp) -> float
+log(float x) -> float
+exp(float x) -> float
+floor(float x) -> float
+ceil(float x) -> float
+round(float x) -> float
 ```
+These are all **global functions**, not members of the Math module.
 
 ### Constants
 
@@ -130,17 +126,19 @@ Math.e    -> float   // Euler's number
 ### Matrix
 
 ```pike
-Math.Matrix(int rows, int cols, array|void values)
+Math.Matrix(int rows, int cols, int|float|void fill)
+Math.Matrix(array(array(int|float)) rows)
+Math.Matrix(array(int|float)) column_vector
 ```
 
 ```pike
 Math.Matrix()->`+(Math.Matrix other) -> Math.Matrix
 Math.Matrix()->`-(Math.Matrix other) -> Math.Matrix
 Math.Matrix()->`*(Math.Matrix|float other) -> Math.Matrix
-Math.Matrix()->det() -> float
-Math.Matrix()->invert() -> Math.Matrix
 Math.Matrix()->transpose() -> Math.Matrix
-Math.Matrix()->norm() -> float
+Math.Matrix()->norm() -> float              // vectors only
+Math.Matrix()->norm2() -> float
+Math.Matrix()->dot_product(Math.Matrix) -> float
 Math.Matrix()->cast(string type) -> array(array)
 ```
 
@@ -171,12 +169,12 @@ Create a new process. `options` can include: `"cwd"`, `"stdin"`, `"stdout"`, `"s
 Process.create_process()->wait() -> int
 Process.create_process()->kill(int|void signal) -> void
 Process.create_process()->pid() -> int
-Process.create_process()->signaled() -> int
-Process.create_process()->exit_status() -> int
+Process.create_process()->status() -> int
+Process.create_process()->last_signal -> int
 ```
 
 ```pike
-Process.spawn(string command, mapping|void options) -> Process.spawn
+Process.spawn(string command, void|Stream stdin, void|Stream stdout, void|Stream stderr) -> Process.Process
 ```
 Spawn a command via shell.
 
@@ -186,9 +184,9 @@ Process.run(array(string)|string command, mapping|void options) -> mapping
 Run command and wait for completion. Returns `(["stdout": string, "stderr": string, "exitcode": int])`.
 
 ```pike
-Process.exec(string file, string ... args) -> void
+Process.exec(string file, string ... args) -> int
 ```
-Replace current process (does not return).
+Replace current process (does not return on success).
 
 ```pike
 Process.system(string command) -> int
@@ -196,14 +194,15 @@ Process.system(string command) -> int
 Execute shell command, return exit code.
 
 ```pike
-Process.popen(string command, string|void mode) -> Stdio.FILE|Stdio.File
+Process.popen(string command) -> string
+Process.popen(string command, string mode) -> Stdio.FILE
 ```
-Open a pipe to/from a command.
+Without mode, executes command and returns output as string. With mode, returns a Stdio.FILE stream.
 
 ```pike
-Process.kill(int pid, int|void signal) -> void
+kill(int pid, int signal) -> int
 ```
-Send signal to process.
+Send signal to process. Global function.
 
 ---
 
@@ -219,7 +218,7 @@ Find a single option. Returns the option value or `default_val`.
 ```pike
 Getopt.find_all_options(array(string) argv, array(array) option_defs) -> array(array)
 ```
-Parse all options. `option_defs` is `({ ({short, long, type, argname}), ... })`.
+Parse all options. `option_defs` is `({ ({name, type, aliases, argname, default}), ... })` where `aliases` is `string|array(string)` with `-`/`--` prefixes.
 Returns `({ ({name, value}), ... })`.
 
 ```pike
@@ -241,9 +240,9 @@ Thread.Thread(function(mixed ...:mixed) f, mixed ... args) -> Thread.Thread
 
 ```pike
 Thread.Thread()->wait() -> mixed
-Thread.Thread()->status() -> string
+Thread.Thread()->status() -> int
 ```
-Returns "running", "done", or "failed".
+Status returns an int: `Thread.THREAD_RUNNING` (0), `Thread.THREAD_EXITED` (1), `Thread.THREAD_ABORTED` (2).
 
 ### Thread.Mutex
 
@@ -272,10 +271,9 @@ Thread.Condition()->broadcast() -> void
 ### Thread.Local
 
 ```pike
-Thread.Local(mixed|void initial_value)
+Thread.Local()
 ```
-
-Thread-local storage. Assign/read via `obj->value` or `obj->set(value)`.
+Thread-local storage. Access via `obj->get()` and `obj->set(value)`.
 
 ### Thread.Queue
 
@@ -289,7 +287,7 @@ Thread.Queue()
 Thread.Queue()->write(mixed value) -> void
 Thread.Queue()->read() -> mixed
 Thread.Queue()->read_array() -> array
-Thread.Queue()->sizeof() -> int
+Thread.Queue()->size() -> int
 ```
 
 ### Thread.Farm
@@ -297,13 +295,12 @@ Thread.Queue()->sizeof() -> int
 Thread pool for parallel task execution.
 
 ```pike
-Thread.Farm(int|void num_threads)
+Thread.Farm()
 ```
 
 ```pike
 Thread.Farm()->run(function f, mixed ... args) -> Thread.Farm.Result
 Thread.Farm()->run_multiple(array(function) funcs) -> array(Thread.Farm.Result)
-Thread.Farm())->stop() -> void
 ```
 
 ---
@@ -351,21 +348,17 @@ These are objects, not plain integers. Use for typed comparisons or JSON interop
 ## System
 
 ```pike
-System.getcwd() -> string
-System.chdir(string path) -> int
-System.hostname() -> string
-System.time() -> int
-System.gethrtime() -> int       // High-resolution time in nanoseconds
-System.gethrvtime() -> int      // Virtual (CPU) time in nanoseconds
-System.sleep(int|float seconds) -> void
+getcwd() -> string                  // global
+cd(string path) -> int              // global
+time() -> int                        // global
+gethrtime() -> int                   // global (nanoseconds)
+gethrvtime() -> int                  // global (CPU nanoseconds)
+sleep(int|float seconds) -> void     // global
+getenv(string|void name) -> string|mapping  // global
+System.gethostname() -> string
+System.sleep(int seconds) -> int
 System.usleep(int microseconds) -> void
 System.uname() -> mapping
-System.getenv(string|void name) -> string|mapping
-System.setenv(string name, string value) -> void
-System.stat(string path) -> Stdio.Stat
-System.ls(string|void path) -> array(string)
-System.rm(string path) -> int
-System.mkdir(string path, int|void mode) -> int
 ```
 
 ---
@@ -380,8 +373,7 @@ Compile a regular expression.
 ```pike
 Regexp()->match(string subject) -> int
 Regexp()->split(string subject) -> array(string)|zero
-Regexp())->replace(string subject, string|function replacement) -> string
-Regexp())->match_multiple(string subject) -> array(array(string))
+Regexp()->replace(string subject, string|function replacement) -> string
 ```
 
 ---
@@ -394,18 +386,16 @@ MIME.Message(string|void data, mapping|void headers, mapping|void transfer_decod
 Parse or construct a MIME message.
 
 ```pike
-MIME.Message()->body() -> string
-MIME.Message()->headers() -> mapping
+MIME.Message()->getdata() -> string
+MIME.Message()->headers -> mapping
 MIME.Message()->get_filename() -> string|zero
-MIME.Message()->boundary() -> string|zero
-MIME.Message()->parts() -> array(MIME.Message)
-MIME.Message())->setdata(string data) -> void
-MIME.Message())->addpart(MIME.Message part) -> void
+MIME.Message()->boundary -> string|zero
+MIME.Message()->body_parts -> array(MIME.Message)
+MIME.Message()->setdata(string data) -> void
 ```
 
 ```pike
 MIME.ext_to_media_type(string ext) -> string
-MIME.guess_content_type(string filename) -> string
 ```
 
 ---
@@ -449,9 +439,9 @@ Sql.sql_result())->seek(int row) -> void
 ### Other SQL Classes
 
 ```pike
-Sql.NULL    // Singleton null marker
-Sql.Null    // Same as Sql.NULL
-Sql.null    // Same as Sql.NULL
+Sql.NULL    // Val.null — singleton null marker for SQL NULL values
+Sql.Null    // Class; Sql.Null() produces Val.null
+Sql.null    // Class; Sql.null() produces a separate null object (distinct from Val.null)
 Sql.pgsql   // PostgreSQL driver
 Sql.pgsqls  // PostgreSQL over SSL
 Sql.rsql    // Remote SQL proxy
@@ -470,9 +460,9 @@ Calendar.ISO.Year(int year)
 Calendar.ISO.Month(int year, int month)
 Calendar.ISO.Week(int year, int week)
 Calendar.ISO.Day(int year, int month, int day)
-Calendar.ISO.Hour(int year, int month, int day, int hour)
-Calendar.ISO.Minute(...)
-Calendar.ISO.Second(...)
+Calendar.ISO.Day(int year, int month, int day)
+// Hour/Minute/Second are not direct constructors.
+// Access via parent: Calendar.ISO.Day(y,m,d)->hour(int), ->minute(int,int), ->second(int,int,int)
 Calendar.ISO.now() -> Calendar.ISO.Second
 Calendar.ISO.parse(string fmt) -> Calendar.TimeRange
 ```
@@ -483,19 +473,10 @@ Base for year/month/day calendars.
 
 ### Calendar.Time
 
-Time-of-day utilities.
+Module object providing time-of-day utilities. **Not instantiable** — use `Calendar.ISO` or another calendar subsystem to create time objects.
+### Calendar.TimeRange
 
-### Calendar.Duration
-
-Time span (not anchored to a point).
-
-```pike
-Calendar.Duration(int|void years, int|void months, int|void weeks, int|void days, int|void hours, int|void minutes, int|void seconds)
-```
-
-### Calendar.Range
-
-Anchored time range between two time points.
+Base class for anchored time ranges between two time points.
 
 ### Common TimeRange Methods
 
@@ -503,9 +484,9 @@ Anchored time range between two time points.
 timerange->set_size(int n) -> Calendar.TimeRange
 timerange->beginning() -> Calendar.TimeRange
 timerange->end() -> Calendar.TimeRange
-timerange->distance(Calendar.TimeRange other) -> Calendar.Duration
-timerange->`+(Calendar.Duration d) -> Calendar.TimeRange
-timerange->`-(Calendar.Duration|Calendar.TimeRange d) -> Calendar.TimeRange
+timerange->distance(Calendar.TimeRange other) -> Calendar.TimeRange
+timerange->`+(int n) -> Calendar.TimeRange
+timerange->`-(int|Calendar.TimeRange n) -> Calendar.TimeRange
 timerange->format_iso_ymd() -> string
 timerange->format_iso_time() -> string
 timerange->unix_time() -> int
@@ -528,7 +509,7 @@ timerange->number_of_days() -> int
 ## Function
 
 ```pike
-Function.splice(function f, mixed ... args) -> function
+Function.curry(function f) -> function
 ```
 Return a new function with pre-applied arguments (partial application).
 

@@ -134,7 +134,7 @@ The `#pike` directive should appear near the top of the file, before any code th
 |----------------------|-------------|
 | `for item in list:` | `foreach(list;; mixed item)` |
 | `len(arr)` | `sizeof(arr)` |
-| `dict.get(key, default)` | `m[key]\|\|default` or `has_index(m, key) && m[key]` |
+| `dict.get(key, default)` | `m[key]\|\|default` or `has_index(m, key) && m[key]` — note: `\|\|` returns default for falsy values (`0`, `""`); for exact `dict.get` semantics use `has_index(m, key) ? m[key] : default` |
 | `try: ... except: ...` | `catch { ... };` or `catch(mixed e) { ... }` |
 | `f"{name} is {age}"` | `sprintf("%s is %d", name, age)` |
 | `list.append(x)` | `arr += ({x})` |
@@ -146,7 +146,7 @@ The `#pike` directive should appear near the top of the file, before any code th
 |-------------------|-------------|
 | `arr.map(fn)` | `map(arr, fn)` |
 | `arr.filter(fn)` | `filter(arr, fn)` |
-| `arr.reduce(fn, init)` | `Array.reduce(arr, fn, init)` |
+| `arr.reduce(fn, init)` | `Array.reduce(fn, arr, init)` |
 | `Object.keys(obj)` | `indices(m)` |
 | `try { } catch(e) { }` | `catch(e) { }` — no `try` keyword in Pike |
 | `arr.forEach(fn)` | `foreach(arr;; mixed item) fn(item)` |
@@ -169,7 +169,7 @@ The `#pike` directive should appear near the top of the file, before any code th
 | Wrong (Java idiom) | Correct Pike |
 |-------------------|-------------|
 | `try { } catch (Exception e) { }` | `catch { }` or `catch(Error.Generic e) { }` |
-| `obj instanceof MyClass` | `programp(obj) && obj == MyClass` or `objectp(obj) && has_index(obj, "method")` |
+| `obj instanceof MyClass` | `object_program(obj) == (program)MyClass` or `objectp(obj) && has_index(obj, "method")` |
 | `String.valueOf(x)` | `(string)x` or `sprintf("%O", x)` |
 
 ### Ruby
@@ -234,10 +234,10 @@ array filtered = filter(arr, fn);
 | **multiset** | Membership testing only (no values) | `[key]` tests membership, `+= (< key >)` add |
 | **ADT.Stack** | LIFO with explicit push/pop | `push(val)`, `pop()`, `top()` |
 | **ADT.Queue** | FIFO, thread-safe | `put(val)`, `get()`, `peek()` |
-| **ADT.Heap** | Priority queue, scheduling | `push(val)`, `pop()`, `top()` |
-| **ADT.Table** | Tabular data with column ops | `Table.Table(data, columns)` |
-| **ADT.CritBit** | Space-efficient prefix tree for string keys | Prefix search, nearest-neighbor lookup |
-| **ADT.History** | Bounded history buffer | `add(val)`, `get_latest(n)` |
+| **ADT.Heap** | Priority queue, scheduling | `push(val)`, `pop()`, `peek()` (deprecated: `top()` calls `pop()`) |
+| **ADT.Table** | Tabular data with column ops | `ADT.Table.table(data, columns)` |
+| **ADT.CritBit.Tree** | Space-efficient prefix tree for various key types | Prefix search, nearest-neighbor lookup |
+| **ADT.History** | Bounded history buffer | `push(val)`, `h[-1]` latest, `flush()` clear |
 
 ### When to Use What
 
@@ -390,7 +390,7 @@ if (e) handle_error(e);
 | Variables | `lower_case_underscore` | `file_path`, `total_count`, `buffer_size` |
 | Classes/Programs | `CamelCase` or `TitleCase` | `Stdio.File`, `Protocols.HTTP`, `Array` |
 | Modules | `CamelCase` | `Standards.JSON`, `Protocols.HTTP`, `ADT.Stack` |
-| Constants | `UPPER_CASE` or `CamelCase` | `UNDEFINED`, `PIKE_VERSION`, `Math.pi` |
+| Constants | `UPPER_CASE` or `CamelCase` | `UNDEFINED`, `__VERSION__`, `Math.pi` |
 | Private members | Same as public, use `private` keyword | `private int internal_count;` |
 | Boolean variables | `is_`, `has_`, `should_` prefix | `is_connected`, `has_permission`, `should_retry` |
 
@@ -438,8 +438,8 @@ string s2 = replace("hello", ({"h","l"}), ({"H","L"}));  // "HeLLo"
 // Trim whitespace
 string trimmed = String.trim_whites("  hello  ");  // "hello"
 
-// Split on whitespace
-array words = String.split("hello   world\tfoo");  // ({"hello", "world", "foo"})
+// Split on whitespace (no built-in String.split — normalize then divide)
+array words = replace("hello   world\tfoo", "\t", " ") / " " - ({""});  // ({"hello", "world", "foo"})
 
 // Format with sprintf
 string msg = sprintf("%s has %d items", name, count);
@@ -475,7 +475,7 @@ write("%O\n", some_value);
 
 // String cast for simple conversion
 string s = (string)42;  // "42"
-string f = (string)3.14; // "3.140000"
+string f = (string)3.14; // "3.14"
 ```
 
 ## 8. Concurrency Patterns
@@ -547,10 +547,13 @@ void worker() {
 ### Futures and Promises (Concurrent module)
 
 ```pike
-// Create a future from a function
-Concurrent.Future f = Concurrent.Future(lambda() {
-  return expensive_computation();
-});
+// Create a future from a value or computation
+Concurrent.Future f = Concurrent.resolve(expensive_computation());
+
+// Or use a Promise for deferred resolution
+Concurrent.Promise p = Concurrent.Promise();
+// ... later: p->success(result);
+// f = p->future();
 
 // Chain operations
 Concurrent.Future result = f->then(lambda(mixed val) {
@@ -559,18 +562,18 @@ Concurrent.Future result = f->then(lambda(mixed val) {
 
 // Wait for multiple futures
 array(Concurrent.Future) futures = ({
-  Concurrent.Future(lambda() { return task_a(); }),
-  Concurrent.Future(lambda() { return task_b(); }),
-  Concurrent.Future(lambda() { return task_c(); }),
+  Concurrent.resolve(task_a()),
+  Concurrent.resolve(task_b()),
+  Concurrent.resolve(task_c()),
 });
 
 // Wait for all to complete
 Concurrent.Future all = Concurrent.results(futures);
-array results = all->wait();
+array results = all->wait()->get();
 
 // Race: first to complete
 Concurrent.Future winner = Concurrent.first_completed(futures);
-mixed fastest = winner->wait();
+mixed fastest = winner->wait()->get();
 ```
 
 ### Thread-Safe Queue Pattern

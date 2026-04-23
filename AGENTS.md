@@ -10,10 +10,12 @@ Serves as both an installable agent skill and an MCP server exposing tools, reso
 npm install
 npm run build          # tsc → dist/
 npm run start          # node dist/index.js
-npm run lint           # tsc --noEmit
+npm run lint           # eslint src/
+npm run typecheck      # tsc --noEmit
+npm run format:check   # prettier --check
 ```
 
-Requirements: Node.js >= 20, TypeScript 5.x.
+Requirements: Node.js >= 22, TypeScript 5.x.
 
 ## Code Style
 
@@ -29,7 +31,7 @@ src/
   index.ts                       # MCP server entry — 7 tools, resources, prompts
   runner.ts                      # Pike execution helpers (runPike, runPikeCode)
   extractModule.ts               # Module section extractor for stdlib reference
-  tools.test.ts                  # Test suite (102 tests)
+  tools.test.ts                  # Test suite (118 tests)
 
 skills/
   pike-language-reference/       # Agent skill — syntax, types, stdlib patterns

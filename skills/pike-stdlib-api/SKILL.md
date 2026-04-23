@@ -24,8 +24,8 @@ Exact API surface of the Pike 8.0.1116 standard library. This skill provides fun
 | [adt-api.md](references/adt-api.md) | ADT.Stack, ADT.Queue, ADT.Heap, ADT.Table, ADT.CritBit, ADT.History, ADT.List, ADT.Set, ADT.Trie, ADT.Interval, ADT.Sequence, ADT.Struct, ADT.BitBuffer |
 | [concurrent-api.md](references/concurrent-api.md) | Concurrent.Future, Concurrent.Promise, Concurrent.AggregateState |
 | [crypto-api.md](references/crypto-api.md) | Crypto.Hash (SHA256, SHA1, MD5, etc.), Crypto.AES, Crypto.HMAC, Crypto.RSA, Crypto.Password, Crypto.Random, cipher modes |
-| [protocols-api.md](references/protocols-api.md) | Protocols.HTTP (get/post/put/delete, Query, Server), SSL (File, Context, Port), Parser (HTML, CSV, XML) |
-| [standards-api.md](references/standards-api.md) | Standards.JSON, Standards.URI, Standards.UUID, Standards.BASE64, Standards.PEM |
+| [protocols-api.md](references/protocols-api.md) | Protocols.HTTP (get_url/post_url/put_url/delete_url, Query, Server), SSL (File, Context, Port), Parser (HTML, CSV, XML) |
+| [standards-api.md](references/standards-api.md) | Standards.JSON, Standards.URI, Standards.UUID, Standards.PEM |
 | [utilities-api.md](references/utilities-api.md) | String, Array, Math, Process, Getopt, Thread, Error, Val, System, Regexp, MIME, Sql.Sql, Calendar, Image, Debug, Locale, Gmp, Geography, Function, Program, Tools, Web |
 
 ## Rules

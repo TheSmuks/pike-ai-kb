@@ -20,17 +20,22 @@ export function extractModuleSections(content: string, moduleName: string): stri
       if (inMatch) results.push(""); // blank line between sections
       const lower = line.toLowerCase();
       inMatch =
-        lower.includes(lowerModule + " ")
-        || lower.includes(lowerModule + " —")
-        || lower.includes(lowerModule + "(")
-        || lower.includes(lowerModule + ".")
-        || lower.endsWith(lowerModule);
+        lower.includes(lowerModule + " ") ||
+        lower.includes(lowerModule + " —") ||
+        lower.includes(lowerModule + "(") ||
+        lower.includes(lowerModule + ".") ||
+        lower.endsWith(lowerModule);
       if (inMatch) results.push(line);
     } else if (inMatch) {
       results.push(line);
     }
   }
 
-  return results.join("\n").trim()
-    || `No curated reference found for ${moduleName}. Use pike-describe-symbol for runtime introspection.`;
+  const result = results.join("\n").trim();
+  if (!result) {
+    throw new Error(
+      `No curated reference found for ${moduleName}. Use pike-describe-symbol for runtime introspection.`,
+    );
+  }
+  return result;
 }

@@ -12,9 +12,8 @@ Reserved keywords: `break`, `case`, `catch`, `class`, `constant`, `continue`, `d
 ```pike
 42              // decimal
 0x2A            // hexadecimal
-0o52            // octal
+052              // octal (C-style prefix 0)
 0b101010        // binary
-1_000_000       // underscores for readability
 -1              // negative
 Int.NATIVE_MAX  // platform native int max
 Int.NATIVE_MAX  // platform native max; use Gmp.mpz for larger
@@ -61,7 +60,7 @@ Escape sequences: `\a` (bell), `\b` (backspace), `\t` (tab), `\n` (newline), `\v
 ## Operators
 
 ### Arithmetic
-`+  -  *  /  %  **` (power)
+`+  -  *  /  %`
 
 Division on integers rounds toward negative infinity.
 
@@ -75,8 +74,7 @@ Division on integers rounds toward negative infinity.
 `&  |  ^  <<  >>  ~`
 
 ### String
-`+` (concatenation), `*` (repetition: `"ab" * 3 → "ababab"`), `/` (split by delimiter), `*` (also: `"." * ({"a","b"}) → "a.b"`)
-
+`+` (concatenation), `*` (repetition: `"ab" * 3 → "ababab"`), `/` (split by delimiter), `*` (also: `({"a","b"}) * "." → "a.b"`)
 ### Array
 `+` (concatenation), `-` (difference), `*` (join: `({"a","b"}) * "," → "a,b"`), `&` (intersection), `|` (union)
 
@@ -97,7 +95,7 @@ arr[-2]      // second to last
 ```
 
 ### Assignment
-`=  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=  **=`
+`=  +=  -=  *=  /=  %=  &=  |=  ^=  <<=  >>=`
 
 ### Ternary
 `cond ? a : b`
@@ -202,8 +200,9 @@ return_type function_name(type1 arg1, type2 arg2) {
   return value;
 }
 
-// Optional arguments via default values:
-void greet(string name, string greeting "Hello") {
+// Optional arguments — use type|void and assign default in body:
+void greet(string name, string|void greeting) {
+  if (zero_type(greeting)) greeting = "Hello";
   write("%s, %s!\n", greeting, name);
 }
 ```
@@ -234,7 +233,7 @@ void process(int first, string ... rest) {
 ```pike
 function(int, int:string) fn;  // takes two ints, returns string
 function(:void) cb;             // takes nothing, returns void
-function(int:string) | zero fn; // function or zero
+function(int:string) | int(0..0) fn; // function or zero
 ```
 
 ## Classes and Inheritance
@@ -350,10 +349,10 @@ array(int|string) z;    // array of int-or-string elements
 ```pike
 mixed x;            // any value
 void                // no value / no return
-zero                // only the value 0 / UNDEFINED
+zero                // type meaning only the value 0 / UNDEFINED; use as int(0..0) in declarations
 program p;          // a class/program object
 object(Program) o;  // object implementing Program
-auto x = expr;      // inferred from initializer
+// auto is not yet reserved in Pike 8.0 (triggers warning: 'will soon be a reserved keyword')
 ```
 
 ## Preprocessor Directives
@@ -400,8 +399,7 @@ class Vec {
 
   // Arithmetic
   Vec `+(Vec other) { return Vec(x + other->x, y + other->y); }
-  Vec `-(Vec other) { return Vec(x - other->x, y - other->y); }
-  Vec `-() { return Vec(-x, -y); }  // unary minus: no argument
+  Vec `-(object|void other) { if (other) return Vec(x - other->x, y - other->y); return Vec(-x, -y); }
 
   // Comparison
   int `==(mixed other) {
@@ -411,7 +409,7 @@ class Vec {
 
   // Index
   float `[](int i) { return i == 0 ? x : y; }
-  Vec `[]=(int i, float v) { if (i == 0) x = v; else y = v; return this; }
+  void `[]=(int i, float v) { if (i == 0) x = v; else y = v; }
 
   // Display
   string _sprintf(int fmt) {
@@ -549,36 +547,10 @@ final void dont_override() { }  // cannot be overridden in subclass
 inline int fast() { return 1; }  // suggest inline
 optional string maybe;           // optional member (may not exist)
 variant void foo(int x) { }     // overloaded variant
-__deprecated void old_method() { }  // emits deprecation warning
+__deprecated__ void old_method() { }  // emits deprecation warning
 
 // NOTE: "static" is deprecated — use "protected"
 ```
-
-## Compile-Time Assertions (_Static_assert)
-
-Pike provides `_Static_assert()` for compile-time constant expression checks.
-
-### Syntax
-```pike
-_Static_assert(constant_expression, "error message");
-static_assert(constant_expression, "error message");  // alias
-```
-
-### Rules
-- Both arguments must be compile-time constants.
-- If argument 1 is zero/false, compilation fails with argument 2 message.
-- If argument 1 is non-zero, compiles to nothing (no runtime effect).
-
-### Examples
-```pike
-_Static_assert(1, "always passes");
-static_assert(sizeof("hello") == 5, "string length mismatch");
-static_assert(__MAJOR__ >= 8, "Pike 8.0 or later required");
-```
-
-#### Gotchas
-- Cannot use runtime values — only compile-time constants
-- Not a runtime construct — eliminated by compiler
 
 ## Foreach Variants
 
@@ -588,7 +560,7 @@ foreach (({10, 20, 30}); int i; int val)
   write("[%d] = %d\n", i, val);  // [0]=10, [1]=20, [2]=30
 
 // Array value only
-foreach (({"a", "b"}); string val)
+foreach (({"a", "b"}); ; string val)
   write("%s\n", val);
 
 // Mapping with key and value
@@ -600,12 +572,12 @@ foreach ("ABC"; int i; int c)
   write("[%d] = %d\n", i, c);  // [0]=65, [1]=66, [2]=67
 
 // String character only
-foreach ("hello"; int c)
+foreach ("hello"; ; int c)
   write("%c", c);  // hello
 
-// Multiset
-foreach ((<"a", "b">); string key)
-  write("%s\n", key);
+// Multiset — must use 3-part form (key + present flag)
+foreach ((<"a", "b">); string key; int present)
+  write("%s %d\n", key, present);
 ```
 
 #### Gotchas
@@ -622,10 +594,11 @@ a[2..4];    // ({ 2, 3, 4 }) — inclusive
 a[..3];     // ({ 0, 1, 2, 3 }) — from start to 3
 a[3..];     // ({ 3, 4, 5 }) — from 3 to end
 
-// Negative indices (from end)
-a[<2..];    // ({ 4, 5 }) — last 2 elements
+// Negative indices (from end: <0 = last, <1 = second-from-last, <2 = third-from-last)
+a[<0..];    // ({ 5 }) — last element
+a[<1..];    // ({ 4, 5 }) — last 2 elements
 a[..<2];    // ({ 0, 1, 2, 3 }) — all but last 2
-a[<3..<1];  // ({ 3, 4 }) — third-from-last to second-from-last
+a[<4..<1];  // ({ 1, 2, 3, 4 }) — fifth-from-last to second-from-last
 
 // String ranges
 "hello world"[6..];  // "world"
@@ -636,7 +609,7 @@ a[<3..<1];  // ({ 3, 4 }) — third-from-last to second-from-last
 
 #### Gotchas
 - Ranges are INCLUSIVE on both ends (a[2..4] includes index 4)
-- Negative index `<N` counts from end: `<1` = last element, `<2` = second-to-last
+- Negative index `<N` counts from end: `<0` = last element, `<1` = second-from-last, `<2` = third-from-last
 - `<N..` is useful for "last N elements"
 - String ranges return strings, not arrays
 
@@ -716,9 +689,9 @@ Pike supports 45 operator overloading functions (lfuns). All are defined in `src
 | %x | Lowercase hex |
 | %X | Uppercase hex |
 | %c | Character (int → char). Width=n outputs n bytes in network order |
-| %f | Float, locale-dependent (3.140000) |
+| %f | Float, minimal decimal representation (3.140) |
 | %g | Heuristic float (shortest representation) |
-| %e | Exponential notation (1.234500e+03) |
+| %e | Exponential notation (1.234e+03) |
 | %s | String |
 | %q | Quoted string (escapes control chars, backslash, quotes) |
 | %O | Debug readable representation (%O on any value) |
@@ -743,7 +716,7 @@ Pike supports 45 operator overloading functions (lfuns). All are defined in `src
 ### sprintf Examples
 ```pike
 sprintf("%d %f %s %O %x %c", 42, 3.14, "hi", ({1}), 255, 65)
-// "42 3.140000 hi ({ /* 1 element */\n  1\n}) ff A"
+// "42 3.140 hi ({ /* 1 element */\n    1\n}) ff A"
 
 sprintf("%-10d", 4711)   // "4711      "
 sprintf("%|10d", 4711)   // "   4711   "
@@ -766,8 +739,7 @@ sprintf("%{%d %}", ({1,2,3}))      // "1 2 3 "
 | %b | Binary integer |
 | %f | Float |
 | %c | Single character as int |
-| %s | String (greedy — use carefully with multiple %s) |
-| %S | String (non-whitespace, until whitespace or end) |
+| %s | String (matches non-greedy when followed by literal or %d/%f) |
 | %H | Hollerith string (length byte + data) |
 | %F | Binary IEEE float |
 | %n | Current position (no input consumed) |
@@ -785,15 +757,12 @@ int n = sscanf("2024-04-18", "%d-%d-%d", int y, int m, int d);
 // n=3, y=2024, m=4, d=18
 
 int n = sscanf("hello world", "%s %s", string a, string b);
-// WARNING: first %s is greedy — a="hello world", b=0, n=1
-// Use %S instead:
-int n = sscanf("hello world", "%S %S", string a, string b);
-// n=2, a="hello", b="world"
+// n=2, a="hello", b="world" — %s is non-greedy when followed by literal or %s
 ```
 
 #### Gotchas
 - sscanf returns number of successfully matched items
-- %s is GREEDY — will consume all remaining input. Use %S for whitespace-delimited tokens
+- %s is non-greedy when followed by a literal or another %s — splits at delimiters correctly
 - sscanf declarations (int y, string s, etc) work as output variables in the call
 - %O is for sprintf only, not sscanf
 - %[set] and %[^set] read until a non-matching character
@@ -803,11 +772,11 @@ int n = sscanf("hello world", "%S %S", string a, string b);
 
 ```pike
 // Anonymous function
-function(:int) adder = lambda(int a, int b) { return a + b; };
+function(int, int:int) adder = lambda(int a, int b) { return a + b; };
 adder(3, 4);  // 7
 
 // Short form
-function(:int) doubler = lambda(int x) { return x * 2; };
+function(int:int) doubler = lambda(int x) { return x * 2; };
 
 // Closures capture variables by reference
 int counter = 0;
