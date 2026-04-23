@@ -38,13 +38,13 @@ Stdio.stderr.write("error\n");
 
 ### Simple requests
 ```pike
-Protocols.HTTP.Query q = Protocols.HTTP.get("http://example.com");
+Protocols.HTTP.Query q = Protocols.HTTP.get_url("http://example.com");
 string body = q->data();
 int status = q->status;
 mapping headers = q->headers;
 
-Protocols.HTTP.Query q = Protocols.HTTP.post("http://example.com", "post data");
-Protocols.HTTP.Query q = Protocols.HTTP.put(url, data, headers);
+Protocols.HTTP.Query q = Protocols.HTTP.post_url("http://example.com", "post data");
+Protocols.HTTP.Query q = Protocols.HTTP.put_url(url, data, headers);
 ```
 
 ### URL handling
@@ -200,6 +200,9 @@ foreach ("hello"; int idx; int char) {
 ### Iterator protocol
 ```pike
 object iter = get_iterator(collection);
+// Iterator starts at first element — access before advancing
+mixed first_val = iter->value();
+mixed first_key = iter->index();
 while (iter->next()) {
   mixed val = iter->value();
   mixed key = iter->index();
@@ -217,7 +220,7 @@ string result = buf->get();
 
 String.capitalize("hello");       // "Hello"
 String.trim_whites("  hello  ");  // "hello"
-String.trim_whites(" \t\n");     // ""
+String.trim_whites(" \t\n");   // "\n" — only spaces and tabs are trimmed
 String.common_prefix(({"abc", "abd"})); // "ab"
 
 // Note: upper_case and lower_case are GLOBAL functions (not in String module)
@@ -377,13 +380,18 @@ string key = Crypto.SHA256.hash("password");  // 32 bytes
 string iv = Crypto.Random.random_string(16);   // 16-byte IV
 
 // Encrypt
-string ciphertext = Crypto.AES.CBC.Buffer()->set_encrypt_key(key)
-  ->set_iv(iv)->crypt("plaintext")->pad(Crypto.PAD_PKCS7)->drain();
+Crypto.AES.CBC.Buffer enc = Crypto.AES.CBC.Buffer();
+enc->set_encrypt_key(key);
+enc->set_iv(iv);
+string ciphertext = enc->crypt("plaintext") + enc->pad(Crypto.PAD_PKCS7);
 
 // Decrypt
-string plaintext = Crypto.AES.CBC.Buffer()->set_decrypt_key(key)
-  ->set_iv(iv)->unpad(ciphertext, Crypto.PAD_PKCS7);
-
+Crypto.AES.CBC.Buffer dec = Crypto.AES.CBC.Buffer();
+dec->set_decrypt_key(key);
+dec->set_iv(iv);
+// For single-block ciphertext:
+string plaintext = dec->unpad(ciphertext, Crypto.PAD_PKCS7);
+// For multi-block: crypt all but last block, then unpad last block
 ### Password Hashing
 ```pike
 // Hash a password (returns string with algorithm+salt+hash)
@@ -445,11 +453,11 @@ string canonical = encode_value_canonic(data);
 
 ### Custom codec
 ```pike
-// Objects need _serialize/_deserialize for encode_value
+// Objects need _encode/_decode for encode_value
 class MyClass {
   int x;
-  mapping _serialize() { return (["x": x]); }
-  void _deserialize(mapping data) { x = data->x; }
+  mapping _encode() { return (["x": x]); }
+  void _decode(mapping data) { x = data->x; }
 }
 ```
 
@@ -500,10 +508,10 @@ SSL.Context ctx = SSL.Context();
 // Require certificate verification
 ctx->verify_certificates = 1;
 ctx->require_trust = 1;
-// Set minimum TLS version
-ctx->preferred_protocols = ({ SSL.Constants.PROTOCOL_TLS_1_2 });
+// Set TLS version range
+ctx->min_version = SSL.Constants.PROTOCOL_TLS_1_2;
 // Add CA certificates
-ctx->add_trust_file("/etc/ssl/certs/ca-certificates.crt");
+ctx->add_cert(Stdio.read_file("/etc/ssl/certs/ca-certificates.crt"));
 ```
 
 ### Gotchas
@@ -539,10 +547,21 @@ return -1;
 
 ### Static File Server
 ```pike
+// Note: Protocols.HTTP.Server.Filesystem is an empty module in Pike 8.0.
+// Implement static file serving directly:
 Protocols.HTTP.Server.Port server =
   Protocols.HTTP.Server.Port(
-    Protocols.HTTP.Server.Filesystem.look_at_files("./public", 0, 0),
-    8080);
+    lambda(Protocols.HTTP.Server.Request req) {
+      string path = "." + req->not_query;
+      if (Stdio.exist(path)) {
+        req->response_and_finish(([
+          "error": 200,
+          "data": Stdio.read_file(path)
+        ]));
+      } else {
+        req->response_and_finish((["error": 404, "data": "Not Found"]));
+      }
+    }, 8080);
 return -1;
 ```
 
@@ -593,8 +612,8 @@ void api_handler(Protocols.HTTP.Server.Request req) {
 ### Basic callback-driven parsing
 ```pike
 Parser.HTML p = Parser.HTML();
-p->add_tag("br", lambda(object t, mapping attr, string content) {
-  return "<br />";  // self-close void tags
+p->add_tag("br", lambda(object parser, mapping attrs) {
+  return "<br />";  // tag callback gets 2 args: parser, attrs
 });
 p->add_container("b", lambda(object t, mapping attr, string content) {
   return "<strong>" + content + "</strong>";  // transform tags
@@ -635,7 +654,7 @@ p->mixed_mode(1);  // enable mixed mode
 p->add_container("item", lambda(object t, mapping a, string c) {
   return ({ "item", c });  // return non-string for mixed output
 });
-array mixed = p->finish("text <item>data</item> more")->read();
+array result = p->finish("text <item>data</item> more")->read();
 // ({ "text ", ({ "item", "data" }), " more" })
 ```
 
@@ -656,7 +675,7 @@ s->push(1);
 s->push(2);
 int top = s->top();    // 2 (peek without removing)
 int val = s->pop();     // 2 (remove and return)
-int empty = s->isempty();
+int empty = (sizeof(s) == 0);
 ```
 
 ### Queue
@@ -697,12 +716,12 @@ int empty = (sizeof(h) == 0);
 ### CritBit Tree
 ```pike
 ADT.CritBit.Tree tree = ADT.CritBit.Tree();
-tree->insert("hello", 1);
-tree->insert("world", 2);
-int|zero val = tree->get("hello");  // 1
-tree->remove("hello");
-array keys = tree->keys();
-array values = tree->values();
+tree["hello"] = 1;
+tree["world"] = 2;
+mixed val = tree["hello"];  // 
+m_delete(tree, "hello");
+array keys = indices(tree);
+array values = values(tree);
 // Prefix search:
 ADT.CritBit.Tree sub = tree->get_subtree("he");
 ```
@@ -724,13 +743,14 @@ float nan = Math.nan;
 // Math.Angle may not exist in all builds — check:
 // if (programp(Math.Angle)) { ... }
 
+```
 ## sprintf Format Specifiers
 
 ```pike
 // Common specifiers:
 write("%d", 42);          // "42" — integer
 write("%s", "hello");     // "hello" — string
-write("%f", 3.14);        // "3.140000" — float
+write("%f", 3.14);        // "3.140" — float (3 decimal places by default)
 write("%x", 255);         // "ff" — hexadecimal
 write("%o", 8);           // "10" — octal
 write("%b", 10);          // "1010" — binary
@@ -778,8 +798,9 @@ sscanf("3.14", "%f", float f);  // f == 3.14
 // Literal percent: %%
 sscanf("100%", "%d%%", int val);  // val == 100, n == 1
 
-// %H for hex-encoded strings
-sscanf("48656c6c6f", "%H", string decoded);  // decoded == "Hello"
+// %H for length-prefixed binary strings (2-byte big-endian length + data)
+sscanf(sprintf("%2c%s", 5, "Hello"), "%2H", string decoded);  // decoded == "Hello"
+// %2H reads 2-byte length prefix then that many bytes; %4H uses 4-byte prefix
 
 // %{format%} — matched repeatedly into array of arrays
 sscanf("1 2 3", "%{%d%}", array matches);
@@ -964,9 +985,9 @@ void walk_tree(object fs, string path) {
 ```pike
 // Parse MIME message
 MIME.Message msg = MIME.Message(raw_mime_data);
-write("type: %s\n", msg->type());          // "text/plain"
-write("params: %O\n", msg->params());      // (["charset": "utf-8"])
-write("headers: %O\n", msg->headers());    // all headers
+write("type: %s/%s\n", msg->type, msg->subtype);  // "text/plain" (data members, not functions)
+write("params: %O\n", msg->params);      // (["charset": "utf-8"])
+write("headers: %O\n", msg->headers);    // all headers
 string body = msg->getdata();              // body content
 
 // Multipart messages
@@ -985,7 +1006,7 @@ array s = allocate(3, "x");        // ({"x","x","x"}) — deep copies init
 // Extracting data
 array col = column(({({"a",1}),({"b",2})}), 1); // ({1,2})
 array r = rows((["x":1,"y":2]), ({"x","z"})); // ({1,UNDEFINED})
-array t = transpose(({{1,2}),({3,4})}); // ({({1,3}),({2,4})})
+// transpose does not exist as a predef; use Array.transpose or implement manually
 
 // Search
 int idx = search(({10,20,30}), 20);  // 1 (returns -1 if not found)
@@ -1076,7 +1097,7 @@ img->rotate(90);     // rotate 90 degrees
 img->mirrorx();      // horizontal flip
 img->grey();         // convert to grayscale
 string jpeg = Image.JPEG.encode(img);  // encode to JPEG
-string png = Image.PNG.encode(img);    // encode to PNG
+string bmp = Image.BMP.encode(img);     // encode to BMP (PNG.encode does not exist)
 ```
 
 ### Gotchas
@@ -1122,9 +1143,9 @@ url->fragment;  // "frag"
 string uuid = Standards.UUID.make_version1();
 string uuid4 = Standards.UUID.make_version4();
 
-// BASE64
-string encoded = Standards.BASE64.encode(data);
-string decoded = Standards.BASE64.decode(encoded);
+// BASE64 (use MIME.encode_base64 / MIME.decode_base64; Standards.BASE64 does not exist)
+string encoded = MIME.encode_base64(data);
+string decoded = MIME.decode_base64(encoded);
 ```
 
 ## Debug Module (Real APIs)
@@ -1159,8 +1180,7 @@ int size = Debug.size_object(obj);
 Regexp.SimpleRegexp r = Regexp("h.llo");
 r->match("hello");   // 1
 r->split("hello");   // array of captured groups
-// Note: replace() is not available on SimpleRegexp
-// Use glob-style replace via replace() global function instead
+r->replace("say hello loudly", "HOWDY");  // "say HOWDY loudly"
 
 // Convenience: Regexp() returns SimpleRegexp
 object r = Regexp("^[a-z]+$");
@@ -1366,14 +1386,14 @@ array(string) keys = t->list_keys();
 t->sync();          // force flush to disk
 t->statistics();    // (["keys": N, "size": N])
 
-// Transactions (requires "t" in mode)
-Yabu.DB db = Yabu.DB("path", "rwct");
-Yabu.Transaction tx = db->table("acct")->transaction();
-tx->set("alice", (tx->get("alice") || 0) - 100);
-tx->set("bob", (tx->get("bob") || 0) + 100);
-tx->commit();     // throws on conflict
-tx->rollback();   // discard
-```
+// Transaction API — NOTE: Yabu.DB does not expose a transaction() method in
+// Pike 8.0.1116. The transaction interface below is aspirational/unavailable.
+// Yabu.DB db = Yabu.DB("path", "rwct");
+// Yabu.Transaction tx = db->table("acct")->transaction();
+// tx->set("alice", (tx->get("alice") || 0) - 100);
+// tx->set("bob", (tx->get("bob") || 0) + 100);
+// tx->commit();     // throws on conflict
+// tx->rollback();   // discard
 
 #### Gotchas
 // - Only one DB per directory (process lock via lock.pid)
@@ -1443,7 +1463,7 @@ Int.NATIVE_MAX    // 9223372036854775807
 Int.inf + 1;         // Int.inf
 Int.inf * -1;        // -Int.inf
 (string)Int.inf;     // "inf"
-intp(Int.inf);       // 0 (it's an object, not an int)
+intp(Int.inf);       // 1 (Int.inf satisfies both intp and objectp)
 
 // Byte swapping
 int swapped = Int.swap_word(0x1234);    // 0x3412
@@ -1457,7 +1477,7 @@ Int.parity(7);  // 1 (three set bits = odd)
 ```
 
 #### Gotchas
-// - Int.inf is an object, not an int — intp() returns 0
+// - Int.inf satisfies both intp() and objectp() — it is an Int.Inf object that acts as int
 // - parity() rejects negative values
 // - Values outside NATIVE_MIN..NATIVE_MAX use slower bignum
 
@@ -1471,7 +1491,7 @@ Float.EPSILON    // 2.22045e-16
 Float.DIGITS_10  // 15
 
 // NaN check
-Float.isnan(0.0/0.0);   // 1
+Float.isnan(Math.nan);   // 1 (use Math.nan, not 0.0/0.0 which throws Division by zero)
 Float.isnan(Math.inf);  // 0
 
 // Precision constant (one of these exists, value 1)
@@ -1489,10 +1509,10 @@ object m = master();           // Get current master
 
 // Key master methods:
 m->is_absolute_path("/foo");   // 1
-m->explode_path("/a/b/c");    // ({ "", "a", "b", "c" })
+m->explode_path("/a/b/c");    // ({ "/", "a", "b", "c" }) — first element is "/" not ""
 m->dirname("/a/b/c");         // "/a/b"
 m->basename("/a/b/c");        // "c"
-m->normalize_path("/a/../b"); // "/b"
+m->normalize_path("/a/../b"); // "/a/../b" — does NOT normalize; use combine_path or resolve_path
 m->getenv("HOME");            // environment variable
 
 // Master replaces the compilation and module resolution system
@@ -1516,10 +1536,10 @@ Note: Module is `Geography`, not `Geographical`.
 ```pike
 // Position (lat, long, alt)
 Geography.Position p = Geography.Position(59.33, 18.07);
-string lat = p->latitude();          // "59°19.8'N"
-string lon = p->longitude();         // "18°4.2'E"
-int zone = p->UTM_zone_number();     // 33
-string utm = p->UTM(2);             // "33W 672381.87 6580822.93"
+string lat = p->latitude();          // "59°19.800'N"
+string lon = p->longitude();         // "18°4.200'E"
+int zone = p->UTM_zone_number();     // 34
+string utm = p->UTM(2);             // "34V 333313.10 6580465.72"
 
 // String parsing
 Geography.Position p2 = Geography.Position("59 19 30N", "18 4 12E");
@@ -1587,8 +1607,8 @@ class MyDNS {
   mapping reply_query(mapping query, mapping udp_data, function cb) {
     return ([ "rcode": Protocols.DNS.NOERROR,
               "an": ({ ([ "name": query->qd[0]->name,
-                          "type": Protocols.DNS.EntryType.T_A,
-                          "cl": Protocols.DNS.ResourceClass.C_IN,
+                          "type": Protocols.DNS.T_A,
+                          "cl": Protocols.DNS.C_IN,
                           "ttl": 300, "a": "127.0.0.1" ]) }) ]);
   }
 }
@@ -1623,10 +1643,8 @@ Key APIs:
 Protocols.XMLRPC.Client client = Protocols.XMLRPC.Client("http://example.com/rpc");
 mixed result = client["method_name"](arg1, arg2);
 
-// Server
-Protocols.XMLRPC.Server server = Protocols.XMLRPC.Server();
-server->add_method("add", lambda(int a, int b) { return a + b; });
-```
+// Server — NOTE: Protocols.XMLRPC.Server does not exist in Pike 8.0.1116.
+// There is no built-in XML-RPC server component. Use Protocols.XMLRPC.Client only.
 
 ## Protocols.LDAP — LDAP Client
 
@@ -1676,12 +1694,12 @@ int wd = instance->add_watch("/tmp",
 ## Local Module
 
 ```pike
-// Local module namespace for custom Pike modules
-// Place modules in $HOME/pike_modules/ or /usr/local/pike_modules/
-
-// Add custom module search path
-Local.add_path("/opt/myapp/pike_modules");
-Local.remove_path("/opt/myapp/pike_modules");
+// Local module is the namespace for user-installed Pike modules.
+// Modules are found via PIKE_MODULE_PATH environment variable
+// or by placing them in $HOME/pike_modules/ or /usr/local/pike_modules/
+//
+// Note: The Local module has no exported symbols in Pike 8.0.
+// To add search paths at runtime, set PIKE_MODULE_PATH before launch.
 ```
 
 ## Sql Module — Database Access
@@ -1791,10 +1809,10 @@ limit(0, 15, 10);  // 10
 
 // set_weak_flag — weak references for GC
 mapping m = ([ "a": some_object ]);
-set_weak_flag(m, PIKE_WEAK_VALUES);  // values can be GC'd
-set_weak_flag(m, PIKE_WEAK_INDICES); // keys can be GC'd
-set_weak_flag(m, 1);                  // shorthand for PIKE_WEAK_BOTH
-// Constants: PIKE_WEAK_INDICES=2, PIKE_WEAK_VALUES=4, PIKE_WEAK_BOTH=6
+set_weak_flag(m, Pike.WEAK_VALUES);  // values can be GC'd
+set_weak_flag(m, Pike.WEAK_INDICES); // keys can be GC'd
+set_weak_flag(m, 1);                  // shorthand for both
+// Constants: Pike.WEAK_INDICES=2, Pike.WEAK_VALUES=4; no Pike.WEAK_BOTH — use Pike.WEAK_INDICES|Pike.WEAK_VALUES (=6)
 
 // object_program — get program from object
 class Foo {}
@@ -1808,7 +1826,7 @@ write("%O\n", object_program(f)); // Foo
 #### Gotchas
 - limit() args are (min, x, max) — easy to confuse with clamp(x, min, max)
 - set_weak_flag returns the same container reference (modifies in place)
-- PIKE_WEAK_BOTH=6, NOT 1 (flag=1 is shorthand for both)
+- No Pike.WEAK_BOTH constant — use Pike.WEAK_INDICES|Pike.WEAK_VALUES (=6); flag=1 is shorthand for both
 
 ## String.Buffer (Deep)
 
@@ -2008,7 +2026,7 @@ string time = now->format_tod();              // "14:30:05"
 // Arithmetic
 Calendar.Day tomorrow = today + 1;             // add day
 Calendar.Day next_week = today + 7;  // add 7 days
-int days_until = christmas - today;             // TimeRange subtraction
+Calendar.TimeRange days_until = christmas - today; // TimeRange (not int)
 
 // Parsing
 Calendar.Day d = Calendar.parse("%Y-%M-%D", "2024-04-18");
@@ -2022,7 +2040,7 @@ object now_utc = Calendar.now()->set_timezone("UTC");  // returns TimeofDay, not
 
 #### Gotchas
 - Calendar.Day is a TimeRange (full day from 00:00 to 24:00)
-- Subtraction of TimeRanges returns number of calendar units (not seconds)
+- Subtraction of TimeRanges returns a TimeRange object (NOT an int or number of seconds)
 - Calendar.parse format is Pike-specific, NOT strftime
 
 ## Threading (Deep)
@@ -2064,13 +2082,15 @@ mixed val2 = fifo->try_read();  // UNDEFINED if empty
 Thread.Queue queue = Thread.Queue();
 queue->write(data);  // never blocks
 
-// Thread pool (Farm)
+// Thread pool (Farm) — use run_multiple for batch execution
 Thread.Farm farm = Thread.Farm();  // default max 20 workers
-farm->set_max_num_threads(4);  // reduce to 4
-Thread.Farm.Result r1 = farm->run(lambda() { return 42; });
-Thread.Farm.Result r2 = farm->run(lambda() { return 43; });
-mixed val1 = r1->get();  // blocks until done, returns 42
-mixed val2 = r2->get();  // blocks until done, returns 43
+farm->set_max_num_threads(4);
+// Note: farm->run() crashes in Pike 8.0.1116. Use run_multiple instead:
+mixed results = farm->run_multiple(({
+  ({ lambda() { return 42; }),
+  ({ lambda() { return 43; }),
+}));
+// results[0]->get() and results[1]->get() return results
 ```
 
 Thread states: THREAD_NOT_STARTED(-1), THREAD_RUNNING(0), THREAD_EXITED(1), THREAD_ABORTED(2)
@@ -2239,7 +2259,8 @@ Note: Audio.Codec requires _Ffmpeg — may not be available in all builds.
 ```pike
 // Runtime information
 mapping info = Pike.get_runtime_info();
-// ([ "pike_version": ..., "bytecode_method": ..., etc ])
+// Keys: abi, auto_bignum, bytecode_method, float_size, int_size, native_byteorder
+// Note: no "pike_version" key — use __REAL_VERSION__ predef constant instead
 
 // GC tuning
 Pike.gc_parameters();  // returns current GC settings
@@ -2251,7 +2272,7 @@ int bytes = Pike.count_memory(0, object_or_array);
 // Weak reference flags
 int flag = Pike.WEAK_INDICES;  // 2
 int flag2 = Pike.WEAK_VALUES;  // 4
-int flag3 = Pike.WEAK_BOTH;   // 6
+int flag3 = Pike.WEAK_INDICES|Pike.WEAK_VALUES;   // 6 (no Pike.WEAK_BOTH constant)
 ```
 
 ## predef Functions (Comprehensive)
@@ -2373,17 +2394,17 @@ Note: No standalone Protocols.HTTP.Cookie module exists. Cookie handling is inte
 ## Standards.UUID
 
 ```pike
-// Generate UUIDs
-string uuid_v1 = Standards.UUID.make_version1();   // time-based
-string uuid_v3 = Standards.UUID.make_version3("namespace", "name");  // MD5
-string uuid_v4 = Standards.UUID.make_version4();   // random
-string uuid_v5 = Standards.UUID.make_version5("namespace", "name");  // SHA1
+// Generate UUIDs (all return Standards.UUID.UUID objects, cast to string for text)
+Standards.UUID.UUID uuid_v1 = Standards.UUID.make_version1();   // time-based
+Standards.UUID.UUID uuid_v3 = Standards.UUID.make_version3(Standards.UUID.NameSpace_DNS, "name");  // MD5
+Standards.UUID.UUID uuid_v4 = Standards.UUID.make_version4();   // random
+Standards.UUID.UUID uuid_v5 = Standards.UUID.make_version5(Standards.UUID.NameSpace_DNS, "name");  // SHA1
 
-// Compare
-int cmp = Standards.UUID.compare(uuid1, uuid2);
+string text = (string)uuid_v4;  // "7f23dd69-74a3-446e-b3b1-e1dc0994a17d"
 
-// DNS namespace constant
-string ns = Standards.UUID.NAMESPACE_DNS;
+// Namespace constants
+string ns = Standards.UUID.NameSpace_DNS;  // "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+// Note: NameSpace_DNS (not NAMESPACE_DNS); compare UUID objects with == or (string) cast
 ```
 
 ## Standards.PKCS
@@ -2394,12 +2415,16 @@ Available submodules (if compiled with Nettle):
 - `Standards.PKCS.CSR` — Certificate Signing Requests
 - `Standards.PKCS.RSA` — RSA PKCS#1 operations
 - `Standards.PKCS.DSA` — DSA operations
-- `Standards.PKCS.MessageDigest` — message digest algorithms
+- `Standards.PKCS.ECDSA` — ECDSA operations
+// Note: no Standards.PKCS.MessageDigest in Pike 8.0. Use Crypto.SHA256 etc. directly
 
 ```pike
 // Certificate handling
 string pem = Stdio.read_file("cert.pem");
-object cert = Standards.PKCS.Certificate.get_certificate(pem);
+// Decode certificate attributes:
+// Standards.PKCS.Certificate.decode_distinguished_name(pem)
+// Standards.PKCS.Certificate.get_certificate_subject(pem)
+// Standards.PKCS.Certificate.get_certificate_issuer(pem)
 ```
 
 ## Calendar Module (Comprehensive)
@@ -2417,7 +2442,7 @@ Calendar.Year yr = Calendar.Year(2024);
 
 // Formatting
 string ymd = today->format_ymd();         // "2026-04-19"
-string iso = today->format_iso_ymd();     // "2026-04-19"
+string iso = today->format_iso_ymd();     // "2026-04-23 (Apr) -W17-4 (Thu)" — extended format
 string tod = now->format_tod();           // "14:30:05"
 string http_date = now->format_http();    // "Sat, 19 Apr 2026 14:30:05 GMT"
 string smtp_date = now->format_smtp();    // RFC2822 format
@@ -2426,7 +2451,7 @@ string smtp_date = now->format_smtp();    // RFC2822 format
 Calendar.Day tomorrow = today + 1;
 Calendar.Day next_week = today + 7;
 Calendar.Month next_month = Calendar.Month() + 1;
-int days = christmas - today;  // number of days between
+Calendar.TimeRange days = christmas - today;  // TimeRange, not int
 
 // Sub-units
 array(Calendar.Hour) hrs = today->hours();
@@ -2454,7 +2479,7 @@ string wname = today->week_day_name();  // "Saturday"
 
 #### Gotchas
 - Calendar.Day is a TimeRange (full 24-hour period), not a point in time
-- Subtraction returns number of calendar units, not necessarily seconds
+- Subtraction returns a TimeRange, NOT an int — cannot directly assign to int
 - Calendar.Second for precise timestamps, Calendar.Day for dates
 - set_timezone() returns NEW object — original is not modified
 - week_day(): 1=Monday, 7=Sunday (ISO standard)
@@ -2490,10 +2515,11 @@ u->host = "other.com";  // authority auto-updates
 (string)u;              // reassembles canonical form
 
 // Cast to string returns canonical URI
-(string)Standards.URI("HTTP://EXAMPLE.COM/");  // "http://example.com/"
+(string)Standards.URI("HTTP://EXAMPLE.COM/");  // "http://EXAMPLE.COM/"
 
-// Static helper
-Standards.URI.combine_uri_path("/dir/file", "../other");  // "/other"
+// Instance method — combine base path with relative path
+object u = Standards.URI("http://example.com/dir/file.html");
+string path = u->combine_uri_path(u->path, "../other.html");  // "/other.html"
 ```
 
 #### Key Methods
@@ -2507,7 +2533,7 @@ Standards.URI.combine_uri_path("/dir/file", "../other");  // "/other"
 #### Gotchas
 - Port auto-defaults from scheme (443 for https, 80 for http)
 - Setting host/port auto-updates authority; setting authority auto-parses host/port
-- Case-insensitive equality: Standards.URI normalizes scheme/host
+- Case-insensitive equality: Standards.URI normalizes scheme only; host case preserved
 - base_uri is second arg to create() for relative resolution
 
 ## Web Module — JWT, OAuth, API Clients
@@ -2537,8 +2563,7 @@ string jwk_json = Web.encode_jwk(key);
 object decoded_key = Web.decode_jwk(jwk_json);
 // Returns a Sign State object
 
-// JWK Set
-string jwk_set = Web.encode_jwk_set(({ key1, key2 }));
+// JWK Set (decode only — no encode_jwk_set in Pike 8.0)
 array keys = Web.decode_jwk_set(jwk_set_json);
 ```
 
@@ -2573,7 +2598,7 @@ Semantic web (OWL ontologies, RDF triples, RDFS)
 ```pike
 // HTML entity encoding
 _Roxen.html_encode_string("<b>hi & \"bye\"</b>");
-// "&lt;b&gt;hi &amp; &quot;bye&quot;&lt;/b&gt;"
+// "&lt;b&gt;hi &amp; &#34;bye&#34;&lt;/b&gt;"
 
 // URL/HTTP percent-decoding
 _Roxen.http_decode_string("hello%20world");  // "hello world"
@@ -2581,8 +2606,9 @@ _Roxen.http_decode_string("a%2Bb");            // "a+b"
 
 // HTTP header parsing
 _Roxen.HeaderParser hp = _Roxen.HeaderParser();
-mapping headers = hp->feed("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n");
-// Returns mapping with request line + headers
+array parsed = hp->feed("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n");
+// Returns array: ({ preamble, request_line, headers_mapping })
+// parsed[0]="", parsed[1]="GET / HTTP/1.0", parsed[2]=("host":"example.com")
 
 // Construct HTTP response headers
 string hdr = _Roxen.make_http_headers((["Content-Type":"text/html"]));
@@ -2602,7 +2628,7 @@ string hdr = _Roxen.make_http_headers((["Content-Type":"text/html"]));
 Protocols.SNMP.REQUEST_GET;        // 0
 Protocols.SNMP.REQUEST_GETNEXT;    // 1
 Protocols.SNMP.REQUEST_SET;        // 3
-Protocols.SNMP.REQUEST_TRAP;       // 7
+Protocols.SNMP.REQUEST_TRAP;       // 4
 
 // Error codes
 Protocols.SNMP.ERROR_NOERROR;     // 0
@@ -2640,10 +2666,11 @@ monger->search("mysql");
 monger->install("Mysql");
 
 // Package constants
-Tools.Monger.MongerUser.SOURCE_PACKAGE;      // "source package"
-Tools.Monger.MongerUser.SOURCE_CONTROL;      // "source control"
-Tools.Monger.MongerUser.PURE_PIKE_PMAR;      // "pure pike"
-Tools.Monger.MongerUser.PLATFORM_SPECIFIC_PMAR;  // "platform specific"
+// Package constants (integers, not strings)
+Tools.Monger.MongerUser.SOURCE_PACKAGE;          // 0
+Tools.Monger.MongerUser.SOURCE_CONTROL;          // 1
+Tools.Monger.MongerUser.PURE_PIKE_PMAR;          // 2
+Tools.Monger.MongerUser.PLATFORM_SPECIFIC_PMAR;  // 3
 
 // Also available: Tools.Monger.MongerDeveloper
 // For module authors: register, upload, manage releases
@@ -2721,8 +2748,8 @@ object bg = Image.Image(200, 100)->setcolor(0, 0, 0);
 bg->paste(img);                           // paste at 0,0
 bg->paste_alpha(img, 128, 10, 10);       // paste with 50% alpha at 10,10
 
-// Color space conversion
-array(float) hsv = img->rgb_to_hsv();    // not on Image object
+// Color space conversion (returns new Image.Image in HSV space)
+object hsv = img->rgb_to_hsv();    // Image.Image, not array
 
 // Encoding/decoding
 string pnm = Image.PNM.encode(img);     // PNM format
@@ -2785,7 +2812,7 @@ ctx->add_cert(rsa, ({ self_signed }));
 
 // Configure TLS version
 ctx->min_version = SSL.Constants.PROTOCOL_TLS_1_2;
-ctx->max_version = SSL.Constants.PROTOCOL_TLS_1_3;
+// Note: TLS 1.3 not supported in Pike 8.0.1116. Max is PROTOCOL_TLS_MAX (=771 = TLS 1.2).
 
 // Filter weak cipher suites
 ctx->filter_weak_suites();
@@ -3028,7 +3055,7 @@ MIME.encode_qp("Hello = World\r\n");
 MIME.decode_qp(encoded);
 
 // UUencode
-MIME.encode_uue("filename", data);
+MIME.encode_uue(data, "filename");  // args are (data, filename), NOT (filename, data)
 MIME.decode_uue(encoded);
 
 // Extension to MIME type mapping
@@ -3291,17 +3318,17 @@ f->tcsetsize(rows, cols);     // set terminal size
 
 ### Pipe and FD Operations
 ```pike
-// Create pipe
-array(Stdio.File) pipe = Stdio.File.pipe();
-// pipe[0] = read end, pipe[1] = write end
+// Create pipe — returns the other end (single Stdio.File)
+Stdio.File f1 = Stdio.File();
+Stdio.File f2 = f1->pipe();  // f2 is the other end of the pipe
+// Write to f1, read from f2 (or vice versa)
 
 // Duplicate FD
 Stdio.File dup = f->dup();
 f->dup2(other_file);  // redirect f's FD to other_file
 
-// Send/receive file descriptors over Unix socket
+// Send file descriptors over Unix socket
 f->send_fd(some_file);
-Stdio.File received = f->receive_fd();
 
 // Take/release raw FD
 int fd = f->release_fd();  // take FD without closing
@@ -3310,9 +3337,9 @@ f->take_fd(fd);            // adopt an FD
 // Set close-on-exec
 f->set_close_on_exec(1);
 
-// Lock
-f->lock(Stdio.LOCK_EX);    // exclusive lock
-f->trylock(Stdio.LOCK_SH); // shared lock (non-blocking)
+// Lock (integer arg: 1=exclusive, 0=shared)
+f->lock(1);       // exclusive lock
+f->trylock(0);    // shared lock (non-blocking)
 ```
 
 ### Stdio.FILE — Line-Buffered I/O
@@ -3363,7 +3390,7 @@ sizeof(s);   // 2
 s->reset();  // clear all
 s->pop();    // 2
 s->pop();    // 1
-s->pop();    // UNDEFINED (empty — no error)
+// s->pop() on empty throws "Stack underflow" error
 ```
 
 ### ADT.Heap — Priority Queue
@@ -3395,7 +3422,7 @@ q->put("a"); q->put("b"); q->put("c");
 q->get();   // "a"
 q->peek();  // "b" (peek without removing)
 sizeof(q);  // 2
-q->flush(); // empty the queue, returns all items
+q->flush(); // empties the queue (returns 0, items discarded)
 ```
 
 ### ADT.List — Doubly-Linked List
@@ -3413,9 +3440,9 @@ l->insert("x"); // insert at front
 ```pike
 ADT.History hist = ADT.History(5);  // max 5 entries
 hist->push("e1"); hist->push("e2"); hist->push("e3");
-hist->latest();  // "e3"
-hist->dump();    // ({"e1", "e2", "e3"})
-hist->get(0);    // "e1" (by index, 0=oldest)
+hist[-1];  // "e3" (newest, 1-based from end)
+// No dump() method exists — use (array)hist or indices(hist) to get all entries
+hist[1];  // "e1" (oldest, 1-based indexing)
 sizeof(hist);    // 3
 // Auto-discards oldest when exceeding max
 ```
@@ -3424,7 +3451,7 @@ sizeof(hist);    // 3
 ```pike
 ADT.Interval iv = ADT.Interval(1.0, 5.0);
 iv->contains(3.0);     // 1
-iv->intersects(ADT.Interval(4.0, 8.0)); // 1
+iv->overlaps(ADT.Interval(4.0, 8.0)); // 1
 iv->`&(ADT.Interval(3.0, 7.0));  // intersection: (3.0, 5.0)
 iv->`|(ADT.Interval(4.0, 8.0));  // union: (1.0, 8.0)
 ```
@@ -3432,8 +3459,9 @@ iv->`|(ADT.Interval(4.0, 8.0));  // union: (1.0, 8.0)
 ### ADT.BitBuffer — Bit-Level I/O
 ```pike
 ADT.BitBuffer bb = ADT.BitBuffer();
-bb->add(42, 8);   // add value 42 as 8 bits
-bb->read(4);      // read 4 bits → 2 (0010)
+ADT.BitBuffer bb = ADT.BitBuffer();
+bb->put(42, 8);   // put value 42 as 8 bits
+bb->get(4);       // read 4 bits → 2
 bb->drain();      // get remaining bits
 bb->feed("\xFF"); // feed raw bytes
 ```
@@ -3441,18 +3469,18 @@ bb->feed("\xFF"); // feed raw bytes
 ### ADT.CircularList — Fixed-Size Circular Buffer
 ```pike
 ADT.CircularList cl = ADT.CircularList(3);  // max 3 elements
-cl->push("x"); cl->push("y"); cl->push("z");
-(array)cl;  // ({"x", "y", "z"})
-cl->push("w");  // overwrites oldest
-(array)cl;  // ({"w", "y", "z"})
+ADT.CircularList cl = ADT.CircularList(3);  // max 3 elements
+cl->add("x"); cl->add("y"); cl->add("z");
+(array)cl;  // ({"z", "y", "x"}) — most-recent-first
+// cl->add("w") throws "list is full" error when at capacity
 ```
 
 ### ADT.Table — Tabular Data
 ```pike
-// Takes (column_names, rows, column_types)
+// Takes (rows, column_names, column_types)
 object t = ADT.Table.table(
-  ({"Name", "Age"}),
-  ({ ({"Alice", "30"}), ({"Bob", "25"}) })
+  ({ ({"Alice", "30"}), ({"Bob", "25"}) }),
+  ({"Name", "Age"})
 );
 // Cast to string for ASCII table display
 // Query: t->select("Name"), t->where(lambda(row) { ... })
@@ -3476,10 +3504,10 @@ object t = ADT.Table.table(
 | Heap | push/pop/top | Priority queue, min-first |
 | Set | add/remove/contains | Unique collection |
 | List | append/pop/head/tail | Linked list |
-| History | push/latest/dump | Ring buffer |
-| Interval | contains/intersects | Range math |
-| BitBuffer | add/read/feed | Bit-level I/O |
-| CircularList | push/(cast) | Fixed-size buffer |
+| History | push/[-1]/sizeof | Ring buffer |
+| Interval | contains/overlaps | Range math |
+| BitBuffer | put/get/feed | Bit-level I/O |
+| CircularList | add/(cast) | Fixed-size buffer |
 | Table | select/where/sort | Tabular data |
 
 ## Concurrent Module — Futures and Promises
@@ -3523,7 +3551,7 @@ Concurrent.first_completed(({ future1, future2 }));
 Concurrent.Future mapped = f->map(lambda(mixed v) { return v * 2; });
 
 // FlatMap chain
-Concurrent.Future chained = f->flatmap(lambda(mixed v) {
+Concurrent.Future chained = f->flat_map(lambda(mixed v) {
   return Concurrent.resolve(v + 1);
 });
 
@@ -3551,14 +3579,14 @@ Concurrent.use_backend(Pike.DefaultBackend);
 #### Future Methods
 - `on_success(cb)`, `on_failure(cb)` — register callbacks
 - `map(fun)` — transform result
-- `flatmap(fun)` — chain to next Future
+- `flat_map(fun)` — chain to next Future
 - `future()` on Promise — get associated Future
 
 #### Gotchas
 - Callbacks run on the Pike backend thread — return -1 from main to keep it alive
 - `Concurrent.resolve()` creates already-resolved Future — callback fires immediately on backend tick
 - `Concurrent.all()` fails fast — first rejection rejects the combined Future
-- `flatmap` callback must return a Future, not a raw value
+- `flat_map` callback must return a Future, not a raw value
 
 ## System.Inotify — Linux File Monitoring
 
@@ -3640,7 +3668,7 @@ Array.search_array(({"apple", "banana", "cherry"}), lambda(string s) { return s[
 
 // Sorting
 Array.sort(({3, 1, 2}));        // ({1, 2, 3}) — returns new sorted array
-Array.sort_array(({3, 1, 2}), `>); // ({3, 2, 1}) — custom comparator
+Array.sort_array(({3, 1, 2}), `>); // ({1, 2, 3}) — comparator returns true = keep order
 Array.dwim_sort_func("b", "a"); // "Do What I Mean" sort for mixed types
 
 // Set operations
@@ -3655,23 +3683,24 @@ Array.diff3(a, b, c); // three-way diff
 Array.greedy_diff(a, b); // faster, less optimal diff
 
 // Combinatorics
-Array.permute(({1,2,3})); // all permutations
+Array.permute(({1,2,3}), 3); // permutations of size 3
 Array.combinations(({1,2,3}), 2); // all 2-element combinations
 
 // Partition
-[array neg, array pos] = Array.partition(({ -1, 2, -3, 4 }), lambda(int x) { return x > 0; });
+[array pos, array neg] = Array.partition(({ -1, 2, -3, 4 }), lambda(int x) { return x > 0; });
 // pos = ({2, 4}), neg = ({-1, -3})
 
 // Transformations
 Array.flatten(({{1,2}, {3}, {4,5}})); // ({1, 2, 3, 4, 5})
 Array.transpose(({{1,2}, {3,4}}));      // ({ {1,3}, {2,4} })
 Array.shuffle(({1,2,3,4,5}));          // random order
-Array.everynth(({1,2,3,4,5,6}), 2);   // ({2, 4, 6})
+Array.everynth(({1,2,3,4,5,6}), 2);   // ({1, 3, 5})
 Array.splice(({1,2}), ({"a","b"}));    // ({1, "a", 2, "b"})
 
 // Stack-like operations (on arrays)
-Array.push(ref arr, val); // push to end, returns new size
-Array.pop(ref arr);       // pop from end
+// Stack-like operations — return NEW arrays, do NOT modify in place
+array pushed = Array.push(arr, val); // returns new array with val appended
+mixed result = Array.pop(arr);       // returns ({popped_val, remaining_array})
 Array.shift(ref arr);     // remove first
 Array.unshift(ref arr, val); // prepend
 
@@ -3701,8 +3730,8 @@ transpose, uniq, uniq2, unshift
 #### Gotchas
 - `Array.sort()` returns a NEW sorted array (doesn't modify in place)
 - `predef::sort()` sorts IN PLACE (modifies the argument)
-- `Array.push`/`pop`/`shift`/`unshift` take the array BY REFERENCE
-- `Array.permute` generates ALL permutations — expensive for large arrays
+- `Array.push`/`pop`/`shift`/`unshift` return NEW arrays — they do NOT modify in place
+- `Array.permute(array, k)` takes 2 args: array and permutation size
 - `Array.enumerate` is also available as predef `enumerate()`
 
 ## String Module — 34 Functions
@@ -3710,14 +3739,14 @@ transpose, uniq, uniq2, unshift
 ```pike
 // Case operations
 String.capitalize("hello world");  // "Hello world"
-String.sillycaps("hello world");    // "hElLo WoRlD"
+String.sillycaps("hello world");    // "Hello World" (title-case)
 
 // Trim whitespace
 String.trim_whites("  hello  ");      // "hello"
 String.trim_all_whites(" \n hello \t "); // "hello"
 
 // Hex conversion
-String.string2hex("Hello");    // "48656C6C6F"
+String.string2hex("Hello");    // "48656c6c6f" (lowercase)
 String.hex2string("48656C6C6F"); // "Hello"
 
 // Count occurrences
@@ -3743,21 +3772,21 @@ String.expand_tabs("hello\tworld"); // tabs → spaces
 // Normalize spaces
 String.normalize_space("  hello   world  "); // "hello world"
 
-// String width (character width)
-String.width("hello");   // 8 (narrow)
-String.width("h\u00E9llo"); // 16 (wide)
+// String width (character width in bits)
+String.width("hello");   // 8 (all chars < 256)
+String.width("\u0100"); // 16 (char >= 256)
 
-// HTML utilities
-String.HTML.encode("<b>&</b>"); // HTML entity encode
+// HTML utilities (select, simple_obox, pad_rows — no encode function)
+String.HTML.simple_obox(({"a", "b"})); // simple HTML table
 
-// Range — substring by character indices
-String.range("hello", 1, 3); // "el"
+// Range — character range of string
+String.range("hello"); // ({101, 111}) — ({min_char, max_char})
 
-// Secure string comparison (timing-safe)
-String.secure("secret", "secret"); // 1, constant-time
+// Secure string (returns argument, for timing-safe comparison internals)
+String.secure("secret"); // "secret"
 
 // Filter non-unicode
-String.filter_non_unicode("\xFFhello"); // "hello"
+String.filter_non_unicode("\xFFhello"); // "\xFFhello" (does NOT filter 0xFF)
 
 // Implode nicely
 String.implode_nicely(({"apple", "banana", "cherry"}));
@@ -3823,17 +3852,17 @@ ws->close(Protocols.WebSocket.CLOSE_NORMAL, "bye");
 ```
 
 #### Connection States
-STATE.CONNECTING, STATE.OPEN, STATE.CLOSING, STATE.CLOSED
+// No STATE module — connection state tracked internally
 
 #### Frame Types
 FRAME_TEXT=1, FRAME_BINARY=2, FRAME_CLOSE=8, FRAME_PING=9, FRAME_PONG=10
 FRAME_CONTINUATION=0
 
 #### Close Codes
-CLOSE_NONE=0, CLOSE_NORMAL=1000, CLOSE_GONE_AWAY=1001,
-CLOSE_ERROR=1002, CLOSE_BAD_TYPE=1003, CLOSE_STATUS=1005,
-CLOSE_EXTENSION=1010, CLOSE_POLICY=1008, CLOSE_BAD_DATA=1007,
-CLOSE_UNEXPECTED=1011
+CLOSE_NONE=1005, CLOSE_NORMAL=1000, CLOSE_GONE_AWAY=1001,
+CLOSE_ERROR=1002, CLOSE_BAD_TYPE=1003, CLOSE_BAD_DATA=1007,
+CLOSE_POLICY=1008, CLOSE_EXTENSION=1010, CLOSE_UNEXPECTED=1011
+// CLOSE_STATUS is a type int(10bit), not a close code value
 
 #### Key Classes
 - **Port** — WebSocket server (plain HTTP)
@@ -4115,7 +4144,7 @@ TimeRange (abstract)
 - `Calendar.parse(format, string)` — parse with format string
 - `Calendar.dwim_day(string)` — flexible date parsing
 - `Calendar.dwim_time(string)` — flexible datetime parsing
-- `Calendar.format_iso(t)`, `Calendar.format_iso_short(t)` — ISO format
+- `Calendar.format_iso(int)`, `Calendar.format_iso_short(int)` — takes Unix timestamp (int), NOT Calendar object
 
 #### Gotchas
 - Calendar objects do NOT cast to string — use `format_ymd()` or `%O` in sprintf
@@ -4198,9 +4227,9 @@ Math.nan;  // nan
 // Logarithms
 Math.log2(8.0);    // 3.0
 Math.log10(100.0); // 2.0
-Math.logn(27.0, 3.0); // base-3 log of 27 (= 0.333...)
-// NOTE: logn(x, base) = log(x) / log(base), so logn(27,3) ≈ 0.333
-// For log₃(27) = 3, use: 1.0/Math.logn(27.0, 3.0) or log(27.0)/log(3.0)
+Math.logn(27.0, 3.0); // returns log(base)/log(x) = log(3)/log(27) ≈ 0.333
+// NOTE: logn(x, base) computes log(base)/log(x) — the INVERSE of standard log-base
+// For log₃(27) = 3, use: log(27.0)/log(3.0) or 1.0/Math.logn(27.0, 3.0)
 
 // Combinatorics
 Math.choose(10, 3);  // 120 (C(10,3))
@@ -4220,7 +4249,7 @@ Math.str_turn;  // 6300 (seconds of arc per turn)
 
 // Matrix types
 object m = Math.Matrix(({({1.0, 2.0}), ({3.0, 4.0})}));
-m->norm();       // vector norm
+// norm()/norm2() only work on 1xn or nx1 vector matrices, not 2x2
 m->norm2();      // squared norm
 m->transpose();  // transpose
 m->t();          // alias for transpose
@@ -4236,9 +4265,9 @@ m->t();          // alias for transpose
 ```
 
 #### Gotchas
-- `Math.logn(x, base)` computes `log(x)/log(base)` — for log₃(27), use `log(27.0)/log(3.0)` not `Math.logn`
+- `Math.logn(x, base)` computes `log(base)/log(x)` — the INVERSE of standard log-base. For log_base(x), use `log(x)/log(base)` or `1.0/Math.logn(x, base)`
 - `Math.factor()` returns array of prime factors: `Math.factor(12)` = `({3, 2, 2})`
-- `Math.deg_turn`, `Math.rad_turn` etc. are FLOAT constants (360.0, 2π), not functions
+- `Math.deg_turn`, `Math.gon_turn`, `Math.str_turn` are INTEGER constants (360, 400, 6300). Only `rad_turn` is float (6.28...)
 - Matrix `*` operator is matrix multiplication, not element-wise
 - `Math.nan` is the object `Math.nan`, not a float literal — `0.0/0.0` throws error
 
@@ -4595,7 +4624,7 @@ Protocols.IRC.Client client = Protocols.IRC.Client(
 // Client — main IRC connection
 // Channel — channel state
 // Person — user representation
-// Error — error type
+// Error — error constants (object, not a class)
 // Raw — raw IRC message parsing
 ```
 
@@ -4667,7 +4696,7 @@ while (mapping row = result->fetch_row()) {
 object stream = db->streaming_query("SELECT * FROM large_table");
 
 // Quote values for safe SQL
-string safe = db->quote("O'Brien");  // "O\'Brien"
+string safe = db->quote("O'Brien");  // "O''Brien"
 
 // Compile query (prepare statement)
 object stmt = db->compile_query("SELECT * FROM users WHERE id = %d");
@@ -4737,18 +4766,19 @@ streaming_typed_query, typed_query
 ```pike
 // Geographic position
 Geography.Position pos = Geography.Position(59.33, 18.07);  // Stockholm
-pos->lat();          // 59.33 (latitude)
-pos->long();         // 18.07 (longitude)
-pos->latitude();     // alias
-pos->longitude();    // alias
-pos->alt();          // altitude
-pos->prettyprint();  // "59°19.800'N, 18°4.200'E"
+pos->lat;           // 59.33 (field, not method)
+pos->long;          // 18.07 (field, not method)
+pos->latitude();    // method returning formatted string
+pos->longitude();   // method returning formatted string
+// Use pos->lat and pos->long for float values
+pos->alt;           // altitude (field)
+pos->prettyprint(1.0, 1, "NS"); // requires 3 args
 
 // Distance between positions
 pos->euclidian_distance(other_pos);
 
 // Coordinate systems
-pos->UTM();                // UTM coordinates
+pos->UTM(zone);          // requires int zone argument
 pos->UTM_zone_number();    // UTM zone
 pos->GEOREF();             // GEOREF string
 pos->ECEF();               // Earth-Centered Earth-Fixed
@@ -4775,9 +4805,9 @@ prettyprint, set_ellipsoid, set_from_RT38, set_from_UTM, standard_grid
 
 #### Gotchas
 - Position constructor: `Position(lat, long)` or `Position(lat, long, alt)`
-- Also accepts string: `Position("59°19'48\"N 18°4'12\"E")`
-- `euclidian_distance()` is approximate (good for short distances)
-- UTM, GEOREF, ECEF are different coordinate representation formats
+- `lat`, `long`, `alt` are FIELDS (not methods) — use `pos->lat` not `pos->lat()`
+- `prettyprint()` requires 3 args: `(float precision, int decimals, string direction_chars)`
+- `UTM()` requires an int zone argument
 
 ## Gmp Module — Arbitrary Precision Arithmetic
 
@@ -4795,20 +4825,20 @@ big->size();        // number of bits
 Gmp.mpf f = Gmp.mpf("3.141592653589793238462643383279");
 
 // Gmp.mpq — rational number
-Gmp.mpq r = Gmp.mpq("22/7");
+Gmp.mpq r = Gmp.mpq(22, 7);  // numerator, denominator (string arg not supported)
 
 // Factorial
 Gmp.fac(100);  // 100!
 
 // bignum — Pike auto-promotes to bignum for large ints
-int huge = 2 ** 200;  // auto-bignum
+Gmp.mpz huge = Gmp.mpz(2)->pow(200);  // 2^200 as auto-bignum
 ```
 
 #### Gotchas
 - Pike auto-promotes large integers to Gmp.mpz — no explicit Gmp needed for big ints
 - `Gmp.mpz(string)` creates from decimal string
 - `Gmp.fac(n)` computes factorial
-- `Gmp.mpz` supports all arithmetic operators: `+, -, *, /, %, **, ^, |, &`
+- `Gmp.mpz` supports all arithmetic operators: `+, -, *, /, %, ^, |, &`. Use `mpz->pow(n)` for exponentiation (`**` is not an mpz operator)
 
 ## Protocols.DNS — DNS Resolution (105 items)
 
@@ -5036,7 +5066,7 @@ do_method, do_async_method, do_proxied_method, do_async_proxied_method
 ## Error Module — Structured Error Handling
 
 ```pike
-// Error types (12)
+// Error types (11)
 Error.Generic      // generic error
 Error.BadArgument  // wrong argument type/value
 Error.Index        // index out of range
@@ -5169,9 +5199,9 @@ mixed data = Standards.JSON.decode("{\"key\":\"value\"}");
 mixed arr = Standards.JSON.decode("[1, 2, 3]");
 // ({1, 2, 3})
 
-// Validate (returns -1 for valid, 0 for invalid)
+// Validate (returns -1 for valid, non-negative int for invalid)
 int ok = Standards.JSON.validate("[1,2,3]");  // -1
-int bad = Standards.JSON.validate("not json");  // 0
+int bad = Standards.JSON.validate("not json");  // 1 (error position)
 
 // UTF-8 variants
 mixed data = Standards.JSON.decode_utf8(utf8_string);
@@ -5210,7 +5240,7 @@ object validator = Standards.JSON.Validator(schema_mapping);
 #### Gotchas
 - `Standards.JSON.null` is `Val.null` (object, not 0)
 - `Standards.JSON.true` is `Val.true` — it is NOT equal to int 1
-- `validate()` returns -1 for valid, 0 for invalid (not boolean!)
+- `validate()` returns -1 for valid, non-negative int for invalid (not boolean!)
 - `decode()` throws `Standards.JSON.DecodeError` on invalid JSON — use catch
 - Pike mappings become JSON objects, Pike arrays become JSON arrays
 - JSON numbers that are floats in Pike: `decode("3.14")` returns `3.14` (float)
@@ -5313,8 +5343,8 @@ string fmt = Standards.UUID.format_uuid((string)v4);
 // UUID object methods
 v4->version;           // int (4)
 v4->variant;           // int
-v4->str;               // string representation
-v4->urn;               // "urn:uuid:..."
+v4->str();              // string representation (function, not property)
+v4->urn();              // "urn:uuid:..." (function, not property)
 v4->validate();        // validation check
 v4->timestamp;         // timestamp (v1 only)
 v4->node;              // node ID (v1 only)
@@ -5410,16 +5440,16 @@ string cert = Standards.X509.make_selfsigned_certificate(
 
 // Decode certificate
 object tbs = Standards.X509.decode_certificate(cert);
-tbs->subject;          // subject distinguished name
-tbs->issuer;           // issuer DN
+tbs->subject;          // subject distinguished name (ASN.1 Sequence)
+tbs->issuer;           // issuer DN (ASN.1 Sequence)
 tbs->not_before;       // validity start (int timestamp)
 tbs->not_after;        // validity end (int timestamp)
-tbs->serial;           // serial number
+tbs->serial;           // serial number (Gmp.mpz)
 tbs->version;          // X.509 version
 tbs->public_key;       // public key info
 tbs->extensions;       // extensions mapping
-tbs->subject_str;      // formatted subject string
-tbs->issuer_str;       // formatted issuer string
+tbs->subject_str();    // formatted subject string (function, not property)
+tbs->issuer_str();     // formatted issuer string (function, not property)
 
 // Certificate verification
 mixed result = Standards.X509.verify_certificate(cert, authorities);
@@ -5447,14 +5477,14 @@ Standards.X509.CERT_TOO_OLD;           // 1
 Standards.X509.CERT_CHAIN_BROKEN;      // 8
 
 // Key usage constants
-Standards.X509.KU_digitalSignature;  // bit flag
-Standards.X509.KU_keyCertSign;
-Standards.X509.KU_cRLSign;
+Standards.X509.KU_digitalSignature;  // 1
+Standards.X509.KU_keyCertSign;        // 32
+Standards.X509.KU_cRLSign;            // 64
 ```
 
 #### TBSCertificate Key Methods (56)
 subject, issuer, not_before, not_after, serial, version,
-public_key, extensions, subject_str, issuer_str,
+public_key, extensions, subject_str(), issuer_str(),
 ext_basicConstraints, ext_keyUsage, ext_subjectAltName_dNSName,
 ext_subjectKeyIdentifier, ext_authorityKeyIdentifier,
 keyinfo, validity, der, der_encode
@@ -5508,7 +5538,7 @@ Standards.ASN1.Types.Identifier;    // OID
 Standards.ASN1.Types.UTF8String;    // UTF-8 string
 Standards.ASN1.Types.PrintableString; // printable string
 Standards.ASN1.Types.IA5String;     // IA5 string
-Standards.ASN1.Types.UTCTime;       // UTC time
+Standards.ASN1.Types.UTC;            // UTC time
 Standards.ASN1.Types.GeneralizedTime; // generalized time
 Standards.ASN1.Types.Object;        // generic object
 Standards.ASN1.Types.Compound;      // compound type
@@ -5530,7 +5560,7 @@ int sec = time_obj->sec;           // seconds since epoch
 int usec = time_obj->usec;        // microseconds
 int full = time_obj->usec_full;   // full microseconds since epoch
 
-System.sleep(1);                   // sleep seconds (int or float)
+System.sleep(1);                   // sleep seconds (int only)
 System.usleep(100000);             // sleep microseconds
 System.nanosleep(0, 500000000);   // nanosleep(sec, nsec)
 
@@ -5587,16 +5617,16 @@ System.ETIMEDOUT;    // 110 — connection timed out
 ```
 
 #### Timer Constants
-- `System.CPU_TIME_IS_THREAD_LOCAL` — bool
-- `System.CPU_TIME_RESOLUTION` — float, seconds
-- `System.REAL_TIME_IS_MONOTONIC` — bool
-- `System.REAL_TIME_RESOLUTION` — float, seconds
+- `System.CPU_TIME_IS_THREAD_LOCAL` — string ("yes" or "no")
+- `System.CPU_TIME_RESOLUTION` — int, nanoseconds
+- `System.REAL_TIME_IS_MONOTONIC` — string ("yes" or "no")
+- `System.REAL_TIME_RESOLUTION` — int, nanoseconds
 
 #### Gotchas
 - `System.Timer.get()` returns elapsed since creation AND resets the timer
 - `System.Timer.peek()` returns elapsed without resetting
 - `System.Time.usec_full` is the full microsecond timestamp (not just fractional part)
-- `System.sleep()` accepts float: `sleep(0.5)` for 500ms
+- `System.sleep()` accepts int only: use `usleep()` or `nanosleep()` for sub-second sleep
 - `System.getrlimit()` takes string like `"RLIMIT_NOFILE"`, not constant
 
 ## ADT.Table — Tabular Data
@@ -5619,7 +5649,7 @@ write("%s\n", (string)t);
 
 // Column access returns column INDEX (int), not values
 t->name;  // 0
-t->age;   // 1
+t->age;   // 0 (unreliable — both columns may return 0)
 
 // Output formats
 ADT.Table.ASCII;       // ASCII table formatter
@@ -5628,7 +5658,7 @@ ADT.Table.Separated;   // delimited output
 ```
 
 #### Gotchas
-- **All values must be strings** in the data array — ints will error
+- **Values can be strings or ints** in the data array — both work fine
 - **Column access returns index**, not data: `t->name` returns 0
 - **Cast to string** for ASCII rendering: `(string)t`
 - Table is read-only after creation — no row/column manipulation
@@ -5700,7 +5730,7 @@ DoctypeNode, AttributeNode, RootNode
 
 #### Gotchas
 - `parse_input()` returns RootNode with tree structure
-- `get_text()` on an element returns concatenated text of all child text nodes
+- `get_text()` on an element node returns empty string — call on child text nodes instead
 - `get_elements("tag")` returns direct children only — use `get_descendants()` for recursive search
 - `walk_inorder/preorder/postorder` call function for each node — return `STOP_WALK` to stop
 - `Parser.XML.Simple()->parse()` takes callbacks, not returns tree
@@ -5716,14 +5746,15 @@ array tokens = Parser.Pike.split(code);
 // Group tokens into statements
 array groups = Parser.Pike.group(tokens);
 
-// Hide whitespace tokens
-array clean = Parser.Pike.hide_whitespaces(tokens);
+// Hide whitespace tokens (takes Token objects, not split() strings)
+array token_objs = Parser.Pike.low_split(code);
+array clean = Parser.Pike.hide_whitespaces(token_objs);
 
 // Reconstitute with line numbers
 string src = Parser.Pike.reconstitute_with_line_numbers(groups);
 
 // Strip line statements (preprocessor)
-string stripped = Parser.Pike.strip_line_statements(code);
+array stripped = Parser.Pike.strip_line_statements(groups); // takes array from group()/low_split()
 
 // Token object type
 Parser.Pike.Token;  // token object class
@@ -5750,7 +5781,7 @@ ctx->add_cert(cert_string, ({key_string}));
 
 // Configure version range
 ctx->min_version = SSL.Constants.PROTOCOL_TLS_1_2;
-ctx->max_version = SSL.Constants.PROTOCOL_TLS_1_3;
+ctx->max_version = SSL.Constants.PROTOCOL_TLS_MAX;  // highest available (TLS 1.2 in Pike 8.0)
 
 // Configure cipher suites
 ctx->preferred_suites = ({...});
@@ -5776,7 +5807,7 @@ ctx->set_trusted_issuers(({ca_cert_array}));
 ctx->set_authorities(({ca_certs}));
 
 // Random
-ctx->random;  // random source object
+ctx->random;  // random function/source
 
 // Key sizes
 ctx->long_rsa = 4096;   // long-lived RSA key size
@@ -5911,15 +5942,15 @@ nameprep, Punycode (encode/decode)
 ```pike
 // Country code TLDs (253 entries)
 mapping cc = Standards.TLD.cc;
-// Keys are ISO 3166 country codes: "US", "DE", "UK", etc.
+// Keys are ISO 3166 country codes (lowercase): "us", "de", "uk", etc.
 
 // Generic TLDs
-mixed generic = Standards.TLD.generic;
-// Array of generic TLD strings: "com", "org", "net", etc.
+multiset generic = Standards.TLD.generic;
+// Multiset of generic TLD strings: "com", "org", "net", etc.
 ```
 
 #### Exports
-cc (mapping), generic (array)
+cc (mapping), generic (multiset)
 
 ## Standards.ISO639_2 — Language Codes
 
@@ -5975,13 +6006,13 @@ Protocols.TELNET.DO;     // 253
 Protocols.TELNET.DONT;   // 254
 
 // Telnet options
-Protocols.TELNET.TEOPT_ECHO;         // 1
-Protocols.TELNET.TEOPT_SGA;          // 3 — Suppress Go Ahead
-Protocols.TELNET.TEOPT_TTYPE;        // 24 — Terminal Type
-Protocols.TELNET.TEOPT_NAWS;         // 31 — Window Size
-Protocols.TELNET.TEOPT_LINEMODE;     // 34
-Protocols.TELNET.TEOPT_NEW_ENVIRON;  // 39
-Protocols.TELNET.TEOPT_AUTHENTICATION; // 37
+Protocols.TELNET.TELOPT_ECHO;         // 1
+Protocols.TELNET.TELOPT_SGA;          // 3 — Suppress Go Ahead
+Protocols.TELNET.TELOPT_TTYPE;        // 24 — Terminal Type
+Protocols.TELNET.TELOPT_NAWS;         // 31 — Window Size
+Protocols.TELNET.TELOPT_LINEMODE;     // 34
+Protocols.TELNET.TELOPT_NEW_ENVIRON;  // 39
+Protocols.TELNET.TELOPT_AUTHENTICATION; // 37
 
 // Readline helper
 object rl = Protocols.TELNET.Readline();
@@ -6129,8 +6160,8 @@ Protocols.OBEX.REQ_CONNECT;     // 0x80
 Protocols.OBEX.REQ_DISCONNECT;  // 0x81
 Protocols.OBEX.REQ_PUT;         // 0x02
 Protocols.OBEX.REQ_GET;         // 0x03
-Protocols.OBEX.REQ_SETPATH;     // 0x05
-Protocols.OBEX.REQ_SESSION;     // 0x07
+Protocols.OBEX.REQ_SETPATH;     // 0x85 (133)
+Protocols.OBEX.REQ_SESSION;     // 0x87 (135)
 Protocols.OBEX.REQ_ABORT;       // 0xFF
 Protocols.OBEX.REQ_FINAL;       // final bit flag
 
@@ -6192,7 +6223,7 @@ Tools.AutoDoc.BMMLParser;     // BMML format parser
 Tools.AutoDoc.FLAG_QUIET;     // 0
 Tools.AutoDoc.FLAG_NORMAL;    // 1
 Tools.AutoDoc.FLAG_VERBOSE;   // 2
-Tools.AutoDoc.FLAG_DEBUG;     // 4
+Tools.AutoDoc.FLAG_DEBUG;     // 3
 Tools.AutoDoc.FLAG_KEEP_GOING; // continue on errors
 
 // Tools.Testsuite — Test runner
@@ -6205,7 +6236,7 @@ object sed = Tools.sed();
 object x509_tool = Tools.X509();
 object pem_tool = Tools.PEM();
 
-// Tools.Shoot — Benchmark suite (62 benchmarks)
+// Tools.Shoot — Benchmark suite (57 benchmarks)
 Tools.Shoot.run;             // run benchmarks
 Tools.Shoot.tests;           // list of test classes
 Tools.Shoot.BinaryTrees;     // binary tree benchmark
@@ -6215,7 +6246,7 @@ Tools.Shoot.Foreach;         // iteration benchmark
 Tools.Shoot.Compile;         // compilation benchmark
 ```
 
-#### Tools.Shoot Benchmarks (62)
+#### Tools.Shoot Benchmarks (57)
 Microbenchmarks: Ackermann, BinaryTrees, NestedLoops,
 RecursiveLoops, SortEqualInts, SortOrderedInts,
 Foreach, Compile, CompileExec, ArrayAdding, MatrixMult,
@@ -6257,11 +6288,11 @@ array services = Protocols.Ports.lookup("http");
 
 // Each service has properties
 write("name: %s port: %d proto: %s\n",
-  services[0]->name, services[0]->port, services[0]->proto);
+  services[0]->name, services[0]->port, services[0]->protocol);
 
 // Look up by service name
 Protocols.Ports.lookup("ssh");   // ({Service(ssh 22/tcp)})
-Protocols.Ports.lookup("dns");   // ({Service(domain 53/tcp), Service(domain 53/udp)})
+Protocols.Ports.lookup("domain");   // ({Service(domain 53/tcp), Service(domain 53/udp)})
 
 // Port database access
 Protocols.Ports.tcp;       // mapping of TCP ports/services
@@ -6406,9 +6437,9 @@ random_string(8);              // 8 random bytes
 
 // === TIME ===
 time();                        // seconds since epoch (int)
-time(1);                       // seconds with fractional part (float)
+time(1);                       // seconds since epoch with ns (int)
 gethrtime();                   // high-resolution nanoseconds (int)
-gethrvtime();                  // virtual (CPU) time (float)
+gethrvtime();                  // virtual (CPU) time (int)
 ctime(time());                 // "Sun Apr 19 17:21:56 2026\n"
 
 mapping tm = localtime(time());
@@ -6455,7 +6486,7 @@ gc();                           // run garbage collector
 // === SERIALIZATION ===
 encode_value(data);             // serialize to string
 decode_value(encoded);          // deserialize
-encode_value_canonical(data);   // canonical serialization
+encode_value_canonic(data);     // canonical serialization
 
 // === MISC ===
 all_constants();                 // all predefined constants

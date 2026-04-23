@@ -7,10 +7,11 @@
 | `pike script.pike` | Run a Pike script | `pike hello.pike` |
 | `pike -e 'expr'` | Evaluate single expression | `pike -e 'write("%O\n", indices(Stdio));'` |
 | temp file | Multi-line scripts — write to a .pike file and run it | `pike /tmp/test.pike` |
-| `pike -v` | Show version | `pike --version` |
+| `pike --version` | Show version | `pike --version` |
+| `pike -v` | Increase verbosity (not version) | Adds verbose output during compilation |
 | `pike --show-paths` | Show module/include paths | Shows master.pike, lib/modules, include paths |
 | `pike --info` | Build info + features | Shows version, paths, all compiled-in features |
-| `pike --features` | List all features | Lists modules and capabilities |
+| `pike --features` | List compiled-in features and capabilities | Lists modules and capabilities |
 | `pike -d` / `-d#` | Increase debug level | Debug output during compilation |
 | `pike -t` / `-t#` | Increase trace level | Traces function calls during execution |
 | `pike -x tool` | Run built-in tool | `pike -x hilfe` (REPL), `pike -x test_pike` |
@@ -54,12 +55,11 @@ foreach(methods; int i; string m) {
 typeof(Stdio.read_file)
 // function(string, void | int, void | int : string(8bit))
 
-// Note: typeof(Class->method) returns mixed, not a detailed signature.
-// For instance methods, check on an actual instance:
-typeof(Stdio.File())
-// program(Stdio.File)
+// typeof on a direct method reference returns a detailed signature:
+// typeof(Stdio.read_file) => function(string, void | int, void | int : string(8bit))
+// typeof(Stdio.File->read)  => function(string(0..), void | bool(1..1) : string(8bit))
 
-// To see instance method signatures, iterate:
+// When the method is stored in a mixed variable, typeof returns mixed:
 object f = Stdio.File();
 foreach(indices(f);; string m) {
   mixed v = f[m];
@@ -87,7 +87,7 @@ write("%O\n", some_value);
 write("%t\n", some_value);  // "int", "string", "array", etc.
 
 // typeof — detailed compile-time type
-write("%O\n", typeof(some_value));  // int(42..42), array(int), etc.
+write("%O\n", typeof(some_value));  // int, string, array(int), etc.
 ```
 
 ### Inspect the Module Path

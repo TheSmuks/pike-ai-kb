@@ -26,15 +26,11 @@ Crypto.<Hash>.State()->digest() -> string
 ```
 Return the raw hash digest (binary string). Resets state.
 
-```pike
-Crypto.<Hash>.State()->hash_value() -> string
-```
-Alias for digest.
 
 ```pike
-Crypto.<Hash>.State()->crypt_hash(string password) -> string
+Crypto.<Hash>.crypt_hash(string password, string salt, int rounds) -> string
 ```
-Hash a password using the Unix crypt format.
+Hash a password using the Unix crypt format. Module-level function, not on State.
 
 ### Convenience
 
@@ -43,10 +39,6 @@ Crypto.<Hash>.hash(string data) -> string
 ```
 One-shot hash of the input data.
 
-```pike
-Crypto.<Hash>.hash_value(string data) -> string
-```
-Alias for the one-shot hash.
 
 ### Available Hashes
 
@@ -100,10 +92,11 @@ Encrypt or decrypt a single block (depending on key set).
 
 ```pike
 Crypto.<Cipher>.State()->block_size() -> int
-Crypto.<Cipher>.State()->key_size() -> int
-Crypto.<Cipher>.State()->iv_size() -> int
+Crypto.<Cipher>.State()->key_size() -> int  // returns 0; valid key sizes are cipher-specific (see table below)
 ```
 
+Note: `key_size()` returns 0 before a key is set; after `set_encrypt_key`/`set_decrypt_key`, it returns the actual key length. Valid key sizes are documented per-cipher in the table above.
+`iv_size()` is not available on cipher State objects; it is only relevant in cipher modes (e.g., CBC).
 ### Available Block Ciphers
 
 | Module | Block Size | Key Sizes | Notes |
@@ -149,7 +142,7 @@ Crypto.CBC(Crypto.Cipher cipher)
 ```
 
 ```pike
-Crypto.CBC.State(cipher_state, string iv)
+Crypto.CBC(Cipher.State state, string iv)  // returns a CBC-wrapped cipher state directly; no separate .State subclass
 ```
 
 ```pike
@@ -157,57 +150,16 @@ Crypto.CBC.State()->set_encrypt_key(string key) -> void
 Crypto.CBC.State()->set_decrypt_key(string key) -> void
 Crypto.CBC.State()->crypt(string data) -> string
 Crypto.CBC.State()->set_iv(string iv) -> void
-Crypto.CBC.State()->get_iv() -> string
 ```
 
-### CFB (Cipher Feedback)
-
-Same interface pattern as CBC.
-
-### CTR (Counter)
-
-Same interface pattern as CBC. Counter mode turns a block cipher into a stream cipher.
-
-### OFB (Output Feedback)
-
-Same interface pattern as CBC.
-
-### PCBC (Propagating Cipher Block Chaining)
-
-Same interface pattern as CBC.
-
-### Authenticated Encryption Modes
-
-#### GCM (Galois/Counter Mode)
-
-```pike
-Crypto.GCM(Crypto.BlockCipher16 cipher)
-```
-
-```pike
-Crypto.GCM.State()->set_encrypt_key(string key) -> void
-Crypto.GCM.State()->set_decrypt_key(string key) -> void
-Crypto.GCM.State()->set_iv(string iv) -> void
-Crypto.GCM.State()->crypt(string data) -> string
-Crypto.GCM.State()->update(string aad) -> void   // additional authenticated data
-Crypto.GCM.State()->digest() -> string            // authentication tag
-Crypto.GCM.State()->digest_size(int|void n) -> int
-```
-
-#### EAX
-
-Same AEAD pattern as GCM. Combines CTR + OMAC.
-
-#### CCM
-
-Same AEAD pattern. Combines CTR + CBC-MAC.
-
-### AEAD Base Class
+### Authenticated Encryption Base Classes
 
 ```pike
 Crypto.AEAD  // Base for authenticated encryption with associated data
 Crypto.AE    // Base for authenticated encryption (without AAD)
 ```
+
+Note: GCM, EAX, CCM and other AEAD mode implementations are not available in Pike 8.0.1116. Only CBC mode is provided.
 
 ---
 
@@ -224,19 +176,18 @@ Crypto.HMAC.State(string key)
 ```pike
 Crypto.HMAC.State()->update(string data) -> Crypto.HMAC.State
 Crypto.HMAC.State()->digest() -> string
-Crypto.HMAC.State()->hash_value() -> string
 ```
 
 ### Convenience
 
 ```pike
-Crypto.HMAC(Crypto.Hash)(string key)->hash(string data) -> string
 Crypto.HMAC(Crypto.Hash)(string key)->update(string data)->digest() -> string
+Crypto.HMAC(Crypto.Hash)(string key)(string data) -> string  // one-shot via () call operator
 ```
 
 Example:
 ```pike
-string mac = Crypto.HMAC(Crypto.SHA256)("secret_key")->hash("message");
+string mac = Crypto.HMAC(Crypto.SHA256)("secret_key")("message");
 ```
 
 ---
@@ -250,26 +201,33 @@ Crypto.RSA.State()
 ### Key Management
 
 ```pike
-Crypto.RSA.State()->set_public_key(Crypto.DSA.state|Gmp.mpz n, Gmp.mpz e) -> this
-Crypto.RSA.State()->set_private_key(Crypto.DSA.state|Gmp.mpz n, Gmp.mpz d, array(Gmp.mpz)|void factors) -> this
+Crypto.RSA.State()->set_public_key(Gmp.mpz|int n, Gmp.mpz|int e) -> this
+Crypto.RSA.State()->set_private_key(Gmp.mpz|int d, array(Gmp.mpz|int)|void extra) -> this
 ```
+Where `extra` is `({p, q})` or `({p, q, n})`.
 
 ### Operations
 
 ```pike
 Crypto.RSA.State()->sign(string message, .Hash h) -> string
 Crypto.RSA.State()->verify(string message, .Hash h, string signature) -> int
-Crypto.RSA.State()->encrypt(string message, .Hash|void h) -> string
-Crypto.RSA.State()->decrypt(string ciphertext, .Hash|void h) -> string
-Crypto.RSA.State()->rsa_pad(string message, .Hash|void h) -> string
-Crypto.RSA.State()->rsa_unpad(string padded) -> string
+Crypto.RSA.State()->encrypt(string message) -> string
+Crypto.RSA.State()->decrypt(string ciphertext) -> string
+Crypto.RSA.State()->rsa_pad(string message, int(1..2) type) -> Gmp.mpz
+Crypto.RSA.State()->rsa_unpad(Gmp.mpz block, int(1..2) type) -> string
 ```
 
 ### Key Generation
 
 ```pike
-Crypto.RSA.State()->generate_key(int bits, function(int:int)|void random) -> this
-Crypto.RSA.State()->get_public_key() -> array(Gmp.mpz)
+Crypto.RSA.State()->generate_key(int bits, int|Gmp.mpz|void e) -> this
+```
+Second parameter is the public exponent `e` (default 65537). Retrieve key components with:
+
+```pike
+Crypto.RSA.State()->get_n() -> Gmp.mpz
+Crypto.RSA.State()->get_e() -> Gmp.mpz
+Crypto.RSA.State()->get_d() -> Gmp.mpz
 ```
 
 ---
@@ -279,30 +237,49 @@ Crypto.RSA.State()->get_public_key() -> array(Gmp.mpz)
 ### DSA
 
 ```pike
-Crypto.DSA.State()->generate_key(int bits, function|void rng) -> this
+Crypto.DSA.State()->generate_key(int p_bits, int q_bits) -> this
 Crypto.DSA.State()->set_public_key(Gmp.mpz p, Gmp.mpz q, Gmp.mpz g, Gmp.mpz y) -> this
 Crypto.DSA.State()->set_private_key(Gmp.mpz p, Gmp.mpz q, Gmp.mpz g, Gmp.mpz x) -> this
-Crypto.DSA.State()->sign(string msg, .Hash h) -> string
-Crypto.DSA.State()->verify(string msg, .Hash h, string sig) -> int
+Crypto.DSA.State()->pkcs_sign(string msg, .Hash h) -> string
+Crypto.DSA.State()->pkcs_verify(string msg, .Hash h, string sig) -> int
+Crypto.DSA.State()->raw_sign(string msg, .Hash h) -> string
+Crypto.DSA.State()->raw_verify(string msg, .Hash h, string sig) -> int
 ```
-
-### DH (Diffie-Hellman)
 
 ```pike
-Crypto.DH.State()->generate_key(int bits, function|void rng) -> this
-Crypto.DH.State()->set_public_key(Gmp.mpz p, Gmp.mpz g, Gmp.mpz y) -> this
-Crypto.DH.State()->set_private_key(Gmp.mpz p, Gmp.mpz g, Gmp.mpz x) -> this
-Crypto.DH.State()->get_shared_secret(Gmp.mpz other_public) -> Gmp.mpz
+Crypto.DH.Parameters(int|Crypto.DSA.State|Crypto.DH.Parameters params)
 ```
+
+```pike
+Crypto.DH.Parameters()->p  // Gmp.mpz field
+Crypto.DH.Parameters()->g  // Gmp.mpz field
+Crypto.DH.Parameters()->q  // Gmp.mpz field
+Crypto.DH.Parameters()->generate_keypair(function rnd) -> array(Gmp.mpz)
+Crypto.DH.Parameters()->generate(int bits, function|void rng) -> this
+Crypto.DH.Parameters()->validate() -> int
+```
+
+Pre-defined parameter groups: `Crypto.DH.FFDHE2048` through `Crypto.DH.FFDHE8192`,
+`Crypto.DH.MODPGroup1`, `MODPGroup2`, `MODPGroup5`, `MODPGroup14` through `MODPGroup18`, `MODPGroup22` through `MODPGroup24`.
 
 ### ECC (Elliptic Curve Cryptography)
 
+Key operations are performed via the curve's algorithm-specific sub-objects:
+
 ```pike
-Crypto.ECC.Curve()
-Crypto.ECC.Curve()->generate_key() -> Crypto.ECC.Point
-Crypto.ECC.Curve()->get_private_key(Crypto.ECC.Point) -> Gmp.mpz
-Crypto.ECC.Curve()->get_public_key(Crypto.ECC.Point) -> Crypto.ECC.Point
+Crypto.ECC.SECP_256R1.ECDSA()       // ECDSA signing
+Crypto.ECC.SECP_384R1.ECDSA()       // ECDSA on P-384
+Crypto.ECC.SECP_521R1.ECDSA()       // ECDSA on P-521
 ```
+
+```pike
+Crypto.ECC.<Curve>.ECDSA()->generate_key() -> this
+Crypto.ECC.<Curve>.ECDSA()->get_private_key() -> int
+Crypto.ECC.<Curve>.ECDSA()->get_public_key() -> string
+Crypto.ECC.<Curve>.ECDSA()->get_point() -> Crypto.ECC.<Curve>.Point
+```
+
+Available curves: `SECP_256R1`, `SECP_384R1`, `SECP_521R1`.
 
 ---
 
@@ -318,30 +295,20 @@ Crypto.Password.verify(string password, string hash) -> int
 ```
 Verify a password against a stored hash. Returns 1 on match, 0 otherwise.
 
-```pike
-Crypto.Password.schemes() -> array(string)
-```
-List available hashing schemes.
 
 ---
 
 ## Random
 
 ```pike
-Crypto.Random.random_string(int|void len) -> string
+Crypto.Random.random_string(int len) -> string
 ```
-Return `len` random bytes (default 1).
+Return `len` random bytes. The `len` argument is required.
 
 ```pike
-Crypto.Random.uint32() -> int
-Crypto.Random.uint64() -> int
+Crypto.Random.random(int max) -> Gmp.mpz
 ```
-Random unsigned integers.
-
-```pike
-Crypto.Random.randint(int min, int max) -> int
-```
-Random integer in [min, max].
+Return a random integer in [0, max).
 
 ---
 

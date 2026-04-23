@@ -93,7 +93,7 @@ npm install && npm run build
 
 ### Requirements
 
-- Node.js >= 20
+- Node.js >= 22
 - Pike >= 8.0 on PATH (or set `PIKE_BIN`). Only needed for execution tools, not the knowledge base.
 
 ## Coverage

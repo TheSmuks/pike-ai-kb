@@ -36,3 +36,11 @@ npm-debug.log*
 
 # Coverage
 coverage/
+
+# Fact-check internal tracking
+FACT_CHECK_RESULTS.md
+FACT_CHECK_V2_RESULTS.md
+FACT_CHECK_V3_RESULTS.md
+factcheck-v2/
+factcheck-v3/
+results/

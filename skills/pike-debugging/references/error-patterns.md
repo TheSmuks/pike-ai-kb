@@ -17,7 +17,7 @@ Pike compilation fails fast with precise diagnostics. Every compile error includ
 - Using `extends` instead of `inherit`
 - Forgetting `(` around collection literals: `{1,2,3}` instead of `({1,2,3})`
 
-**Fix:** Go to the line number. Check the token before the error — the mistake is usually on the previous line or the same line before the indicated position.
+**Fix:** Go to the line number. Check the token before the error — the mistake is usually on the previous line or the same line before the indicated position. Note: token names like `TOK_IDENTIFIER` are context-dependent; the same token name may appear for different syntactic constructs.
 
 ### Type Mismatch Errors
 
@@ -44,7 +44,7 @@ Pike compilation fails fast with precise diagnostics. Every compile error includ
 ### Undefined Identifier
 
 ```
--:3:Undefined identifier: my_function
+-:3:Undefined identifier my_function.
 ```
 
 **Common causes:**
@@ -58,7 +58,7 @@ Pike compilation fails fast with precise diagnostics. Every compile error includ
 ### Not Present in Module
 
 ```
--:2:Index 'nonexistent' is not present in module Stdio.
+-:2:Index 'nonexistent' not present in module Stdio.
 ```
 
 **Common causes:**
@@ -126,9 +126,9 @@ Index 10 is out of array range -3..2.
 
 Bad argument errors are caught at **compile time** when the type is statically known:
 ```
--:2:Bad argument 1 to open().
--:2:Expected: string.
--:2:Got     : int(42..42).
+-:2:Bad argument 1 to sqrt.
+-:2:Expected: int | float.
+-:2:Got     : string.
 Compilation failed.
 ```
 
@@ -154,7 +154,7 @@ if (!data) {
 ### Object Already Closed / Destructed
 
 ```
-Attempt to call destructed object.
+Lookup in destructed object.
 ```
 
 **Fix:** Check `objectp(obj)` before calling methods. Destructed objects return false for most type checks.

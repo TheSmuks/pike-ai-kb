@@ -104,7 +104,7 @@ if (!mod) { /* module not available */ }
 // List methods on an object
 object f = Stdio.File();
 array(string) methods = sort(indices(f));
-// Returns: ({ "open", "close", "read", "write", "seek", ... })
+// Note: sorted methods include underscore-prefixed internal methods first
 
 // Get function type signature
 typeof(Stdio.read_file)
@@ -119,22 +119,16 @@ intp(x), floatp(x), stringp(x), arrayp(x), mappingp(x),
 multisetp(x), objectp(x), programp(x), functionp(x)
 ```
 
-### Rule: Use `pike -e '...'` for Single Expressions Only
+### Rule: `pike -e` Accepts Full Programs
 
-`pike -e` compiles a single expression, not a full program. For multi-line scripts, use a file or pipe via stdin:
+`pike -e` compiles and runs Pike code — either a single expression or a full program with `int main()`. For multi-line scripts, a temp file is cleaner:
 
 ```bash
 # Single expression
 pike -e 'write("%O\n", indices(Stdio.File()));'
 
-# Multi-line — pipe to stdin
-pike - <<'EOF'
-void main() {
-  object f = Stdio.File();
-  foreach(sort(indices(f));; string m)
-    write("%s\n", m);
-}
-EOF
+# Full program via -e
+pike -e 'int main() { write("%O\n", indices(Stdio.File())); return 0; }'
 
 # Multi-line — use a temp file
 cat > /tmp/test.pike <<'EOF'

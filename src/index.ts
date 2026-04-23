@@ -9,6 +9,14 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { runPike, runPikeCode } from "./runner.js";
 import { extractModuleSections } from "./extractModule.js";
+import {
+  pikeToolResponse,
+  buildDescribeSymbolCode,
+  buildListMethodsCode,
+  buildSignatureCode,
+  buildListModulesCode,
+} from "./pike-helpers.js";
+import { validateStartupContent } from "./validation.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { name: string; version: string };
@@ -21,6 +29,16 @@ const LANG_REF_DIR = join(SKILLS_BASE, "pike-language-reference");
 const STDLIB_API_DIR = join(SKILLS_BASE, "pike-stdlib-api");
 const DEBUG_DIR = join(SKILLS_BASE, "pike-debugging");
 
+// Symbol path validation: Pike identifiers are alphanumeric + underscore + dot
+const SYMBOL_REGEX = /^[A-Za-z_][A-Za-z0-9_.]*$/;
+
+function validateSymbol(symbol: string, paramName: string): string {
+  if (!SYMBOL_REGEX.test(symbol)) {
+    throw new Error(`Invalid ${paramName}: "${symbol}". Must match /^[A-Za-z_][A-Za-z0-9_.]*$/`);
+  }
+  return symbol;
+}
+
 // ── Data loading ────────────────────────────────────────────────────────────
 
 const fileCache = new Map<string, string>();
@@ -28,13 +46,9 @@ const fileCache = new Map<string, string>();
 async function loadFile(dir: string, name: string): Promise<string> {
   const key = `${dir}/${name}`;
   if (fileCache.has(key)) return fileCache.get(key)!;
-  try {
-    const content = await readFile(join(dir, name), "utf-8");
-    fileCache.set(key, content);
-    return content;
-  } catch {
-    return `File "${name}" not found in ${dir}.`;
-  }
+  const content = await readFile(join(dir, name), "utf-8");
+  fileCache.set(key, content);
+  return content;
 }
 
 async function getStdlib(): Promise<string> {
@@ -54,7 +68,6 @@ async function getSkill(): Promise<string> {
 }
 
 /**
-/**
  * Wrapper: extract module sections from the stdlib reference file.
  */
 async function getModuleSections(moduleName: string): Promise<string> {
@@ -65,8 +78,8 @@ async function getModuleSections(moduleName: string): Promise<string> {
 const server = new McpServer(
   { name: pkg.name, version: pkg.version },
   {
-    instructions: `Pike language MCP server with curated, runtime-verified knowledge base for AI code generation. Three skill layers: (1) pike-language-reference — syntax, types, stdlib patterns, idiomatic Pike guide; (2) pike-stdlib-api — exact function signatures for 30+ modules; (3) pike-debugging — error diagnosis, CLI introspection, runtime debugging. Provides tools to execute/inspect/validate Pike code. All examples verified against Pike 8.0.1116.`,
-  }
+    instructions: `Pike language MCP server with curated, runtime-verified knowledge base for AI code generation. Three skill layers: (1) pike-language-reference — syntax, types, stdlib patterns, idiomatic Pike guide; (2) pike-stdlib-api — exact function signatures for 30+ modules; (3) pike-debugging — error diagnosis, CLI introspection, runtime debugging. Provides tools to execute/inspect/validate Pike code. Introspection tools return structured JSON. All examples verified against Pike 8.0.1116.`,
+  },
 );
 
 // ── Tools ───────────────────────────────────────────────────────────────────
@@ -75,22 +88,27 @@ server.tool(
   "pike-evaluate",
   "Execute Pike code and return output. Code is written to a temp file and executed.",
   {
-    code: z.string().describe("Pike code to execute (should include int main() or be valid top-level statements)"),
+    code: z
+      .string()
+      .describe(
+        "Pike code to execute (should include int main() or be valid top-level statements)",
+      ),
     stdin: z.string().optional().describe("Optional stdin for the Pike process"),
     timeout: z.number().min(1).max(300).optional().describe("Timeout in seconds (default 30)"),
   },
   async ({ code, stdin: codeStdin, timeout }) => {
-    const { stdout, stderr, exitCode } = await runPikeCode(
-      code,
-      codeStdin,
-      (timeout ?? 30) * 1000
-    );
+    const { stdout, stderr, exitCode } = await runPikeCode(code, codeStdin, (timeout ?? 30) * 1000);
     const output = stdout || "(no output)";
     return {
-      content: [{ type: "text" as const, text: exitCode === 0 ? output : `Exit ${exitCode}\n${output}\n${stderr}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: exitCode === 0 ? output : `Exit ${exitCode}\n${output}\n${stderr}`,
+        },
+      ],
       isError: exitCode !== 0,
     };
-  }
+  },
 );
 
 server.tool(
@@ -107,100 +125,42 @@ server.tool(
       content: [{ type: "text" as const, text: stderr || stdout || "Compilation failed" }],
       isError: true,
     };
-  }
+  },
 );
 
 server.tool(
   "pike-describe-symbol",
-  "Look up a Pike module, class, or function at runtime. Returns type signature and members.",
+  "Look up a Pike module, class, or function at runtime. Returns structured JSON with type, kind, and members.",
   { symbol: z.string().describe("Pike symbol path (e.g. 'Stdio.File', 'Array.reduce')") },
   async ({ symbol }) => {
-    const safeSym = JSON.stringify(symbol);
-    const code = `
-string sym = ${safeSym};
-mixed val;
-catch { val = master()->resolv(sym); };
-if (!val && has_prefix(sym, "Stdio.") && !has_prefix(sym, "Stdio._"))
-  catch { val = master()->resolv("_Stdio." + sym[6..]); };
-if (undefinedp(val) || val == 0) { write("Symbol not found: " + sym + "\\n"); exit(1); }
-mapping info = (["symbol": sym, "type": typeof(val)]);
-if (programp(val)) { info["kind"] = "program/class"; info["methods"] = sort(indices(val)); }
-else if (objectp(val)) { info["kind"] = "object"; info["methods"] = sort(indices(val)); }
-else if (functionp(val)) { info["kind"] = "function"; }
-else { info["kind"] = "value"; info["value"] = sprintf("%O", val); }
-info["string_rep"] = sprintf("%O", val);
-write(sprintf("%O\\n", info));
-`;
-    const { stdout, stderr, exitCode } = await runPike(["-e", code], undefined, 15_000);
-    if (exitCode !== 0) {
-      return { content: [{ type: "text" as const, text: `Failed: ${stderr || stdout}` }], isError: true };
-    }
-    return { content: [{ type: "text" as const, text: stdout.trim() }] };
-  }
+    validateSymbol(symbol, "symbol");
+    const code = buildDescribeSymbolCode(JSON.stringify(symbol));
+    const result = await runPikeCode(code, undefined, 15_000);
+    return pikeToolResponse(result, "Symbol lookup failed");
+  },
 );
 
 server.tool(
   "pike-list-modules",
-  "List available Pike modules from the local Pike installation.",
+  "List available Pike modules from the local Pike installation. Returns structured JSON.",
   {},
   async () => {
-    const code = `
-mapping mods = ([]);
-foreach(master()->pike_module_path;; string p) {
-  if (!Stdio.is_dir(p)) continue;
-  array(string) e = get_dir(p) || ({});
-  foreach(e;; string f) {
-    string full = combine_path(p, f);
-    if (has_suffix(f, ".pmod") || has_suffix(f, ".pike"))
-      mods[f[..sizeof(f)-6]] = 1;
-    else if (Stdio.is_dir(full) &&
-             (Stdio.exist(full+"/module.pmod") || Stdio.exist(full+"/module.pike")))
-      mods[f] = 1;
-  }
-}
-write(sort(indices(mods)) * "\\n");
-`;
-    const { stdout, stderr, exitCode } = await runPike(["-e", code], undefined, 15_000);
-    if (exitCode !== 0) {
-      return { content: [{ type: "text" as const, text: `Failed: ${stderr}` }], isError: true };
-    }
-    return { content: [{ type: "text" as const, text: stdout.trim() }] };
-  }
+    const code = buildListModulesCode();
+    const result = await runPike(["-e", code], undefined, 15_000);
+    return pikeToolResponse(result, "Module listing failed");
+  },
 );
 
 server.tool(
   "pike-list-methods",
-  "List methods/indices in a Pike class or module.",
+  "List methods/indices in a Pike class or module. Returns structured JSON.",
   { symbol: z.string().describe("Pike class/module path (e.g. 'Stdio.File')") },
   async ({ symbol }) => {
-    const safeSym = JSON.stringify(symbol);
-    const code = `
-mixed val;
-string sym = ${safeSym};
-catch { val = master()->resolv(sym); };
-if (!val && has_prefix(sym, "Stdio.") && !has_prefix(sym, "Stdio._"))
-  catch { val = master()->resolv("_Stdio." + sym[6..]); };
-if (!val) { write("Not found: %s\\n", sym); exit(1); }
-if (programp(val)) {
-  object inst;
-  if (catch { inst = val(); }) {
-    write("Class %s (cannot instantiate)\\n", sym);
-    write("Methods: %O\\n", sort(indices(val)));
-  } else {
-    write("Class %s methods:\\n", sym);
-    foreach(sort(indices(inst));; string m) write("%s\n", m);
-  }
-} else if (objectp(val)) {
-  write("Object %s members:\\n", sym);
-  foreach(sort(indices(val));; string m) write("%s\n", m);
-}
-`;
-    const { stdout, stderr, exitCode } = await runPike(["-e", code], undefined, 10_000);
-    if (exitCode !== 0) {
-      return { content: [{ type: "text" as const, text: `Not found or failed: ${stdout.trim() || stderr}` }], isError: true };
-    }
-    return { content: [{ type: "text" as const, text: stdout.trim() }] };
-  }
+    validateSymbol(symbol, "symbol");
+    const code = buildListMethodsCode(JSON.stringify(symbol));
+    const result = await runPikeCode(code, undefined, 10_000);
+    return pikeToolResponse(result, "Method listing failed");
+  },
 );
 
 server.tool(
@@ -220,7 +180,12 @@ server.tool(
     const checkResult = await runPike(["-e", checkCode], undefined, timeoutMs);
     if (checkResult.exitCode !== 0) {
       return {
-        content: [{ type: "text" as const, text: `FAIL: Compilation error\n${checkResult.stderr || checkResult.stdout}` }],
+        content: [
+          {
+            type: "text" as const,
+            text: `FAIL: Compilation error\n${checkResult.stderr || checkResult.stdout}`,
+          },
+        ],
         isError: true,
       };
     }
@@ -233,85 +198,86 @@ server.tool(
     const runResult = await runPikeCode(code, codeStdin, timeoutMs);
     if (runResult.exitCode !== 0) {
       return {
-        content: [{ type: "text" as const, text: `FAIL: Runtime error (exit ${runResult.exitCode})\n${runResult.stderr || runResult.stdout}` }],
+        content: [
+          {
+            type: "text" as const,
+            text: `FAIL: Runtime error (exit ${runResult.exitCode})\n${runResult.stderr || runResult.stdout}`,
+          },
+        ],
         isError: true,
       };
     }
 
     return {
-      content: [{ type: "text" as const, text: `PASS: Compilation and execution successful\nOutput:\n${runResult.stdout || "(no output)"}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `PASS: Compilation and execution successful\nOutput:\n${runResult.stdout || "(no output)"}`,
+        },
+      ],
     };
-  }
+  },
 );
 
 server.tool(
   "pike-signature",
-  "Get the exact type signature of a Pike symbol. More precise than pike-describe-symbol.",
+  "Get the exact type signature of a Pike symbol. Returns structured JSON. More precise than pike-describe-symbol.",
   { symbol: z.string().describe("Pike symbol path (e.g. 'Stdio.read_file', 'Array.map')") },
   async ({ symbol }) => {
-    const safeSym = JSON.stringify(symbol);
-    const code = `
-string sym = ${safeSym};
-mixed val;
-catch { val = master()->resolv(sym); };
-if (!val && has_prefix(sym, "Stdio.") && !has_prefix(sym, "Stdio._"))
-  catch { val = master()->resolv("_Stdio." + sym[6..]); };
-if (undefinedp(val) || val == 0) { write("Symbol not found: %s\\n", sym); exit(1); }
-write("Symbol: %s\\n", sym);
-write("Type: %O\\n", typeof(val));
-write("Value: %O\\n", val);
-if (programp(val)) {
-  write("Kind: program/class\\n");
-  object inst;
-  if (!catch { inst = val(); }) {
-    write("Instance methods:\\n");
-    foreach(sort(indices(inst));; string m) {
-      mixed v = inst[m];
-      if (functionp(v))
-        write("  %s: %O\\n", m, typeof(v));
-    }
-  }
-} else if (objectp(val)) {
-  write("Kind: module/object\\n");
-  write("Members:\\n");
-  foreach(sort(indices(val));; string m) {
-    mixed v;
-    if (catch { v = val[m]; }) continue;
-    if (functionp(v) || programp(v) || objectp(v))
-      write("  %s: %O\\n", m, typeof(v));
-  }
-} else if (functionp(val)) {
-  write("Kind: function\\n");
-  write("Signature: %O\\n", typeof(val));
-}
-`;
-    const { stdout, stderr, exitCode } = await runPike(["-e", code], undefined, 15_000);
-    if (exitCode !== 0) {
-      return { content: [{ type: "text" as const, text: `Failed: ${stderr || stdout}` }], isError: true };
-    }
-    return { content: [{ type: "text" as const, text: stdout.trim() }] };
-  }
+    validateSymbol(symbol, "symbol");
+    const code = buildSignatureCode(JSON.stringify(symbol));
+    const result = await runPikeCode(code, undefined, 15_000);
+    return pikeToolResponse(result, "Signature lookup failed");
+  },
 );
 
 // ── Resources ───────────────────────────────────────────────────────────────
 
 // Module-specific resources: extract curated sections from stdlib-patterns.md
 const documentedModules = [
-  "Stdio", "Array", "String", "Math", "Process", "Thread", "Crypto",
-  "Calendar", "Debug", "Locale", "Regexp", "Yabu", "ADT", "Concurrent",
-  "Image", "MIME", "Parser", "SSL", "Standards", "Web", "System",
-  "Sql", "Val", "Geography", "Gmp", "Error", "Protocols",
-  "Function", "Program", "Tools",
+  "Stdio",
+  "Array",
+  "String",
+  "Math",
+  "Process",
+  "Thread",
+  "Crypto",
+  "Calendar",
+  "Debug",
+  "Locale",
+  "Regexp",
+  "Yabu",
+  "ADT",
+  "Concurrent",
+  "Image",
+  "MIME",
+  "Parser",
+  "SSL",
+  "Standards",
+  "Web",
+  "System",
+  "Sql",
+  "Val",
+  "Geography",
+  "Gmp",
+  "Error",
+  "Protocols",
+  "Function",
+  "Program",
+  "Tools",
 ];
 
 for (const mod of documentedModules) {
   server.resource(
     `pike-ref-${mod.toLowerCase()}`,
     `pike://ref/${mod}`,
-    { description: `Curated Pike ${mod} module reference (runtime-verified)`, mimeType: "text/markdown" },
+    {
+      description: `Curated Pike ${mod} module reference (runtime-verified)`,
+      mimeType: "text/markdown",
+    },
     async (uri) => ({
       contents: [{ uri: uri.href, text: await getModuleSections(mod) }],
-    })
+    }),
   );
 }
 
@@ -319,47 +285,67 @@ for (const mod of documentedModules) {
 server.resource(
   "pike-stdlib-reference",
   "pike://ref/stdlib",
-  { description: "Complete Pike standard library reference (6500+ lines, 157 sections, runtime-verified)", mimeType: "text/markdown" },
+  {
+    description:
+      "Complete Pike standard library reference (6500+ lines, 157 sections, runtime-verified)",
+    mimeType: "text/markdown",
+  },
   async (uri) => ({
     contents: [{ uri: uri.href, text: await getStdlib() }],
-  })
+  }),
 );
 
 server.resource(
   "pike-syntax-reference",
   "pike://ref/syntax",
-  { description: "Pike syntax reference (control flow, operators, declarations, preprocessor)", mimeType: "text/markdown" },
+  {
+    description: "Pike syntax reference (control flow, operators, declarations, preprocessor)",
+    mimeType: "text/markdown",
+  },
   async (uri) => ({
     contents: [{ uri: uri.href, text: await getSyntax() }],
-  })
+  }),
 );
 
 server.resource(
   "pike-types-reference",
   "pike://ref/types",
-  { description: "Pike type system reference (types, coercion, typeof, operators)", mimeType: "text/markdown" },
+  {
+    description: "Pike type system reference (types, coercion, typeof, operators)",
+    mimeType: "text/markdown",
+  },
   async (uri) => ({
     contents: [{ uri: uri.href, text: await getTypes() }],
-  })
+  }),
 );
 
 server.resource(
   "pike-skill",
   "pike://ref/skill",
-  { description: "Pike language skill definition (key concepts, rules, gotchas for code generation)", mimeType: "text/markdown" },
+  {
+    description:
+      "Pike language skill definition (key concepts, rules, gotchas for code generation)",
+    mimeType: "text/markdown",
+  },
   async (uri) => ({
     contents: [{ uri: uri.href, text: await getSkill() }],
-  })
+  }),
 );
 
 // Idiomatic Pike guide
 server.resource(
   "pike-idiomatic-guide",
   "pike://ref/idiomatic-pike",
-  { description: "Idiomatic Pike patterns — autodoc, anti-patterns, data structures, naming conventions", mimeType: "text/markdown" },
+  {
+    description:
+      "Idiomatic Pike patterns — autodoc, anti-patterns, data structures, naming conventions",
+    mimeType: "text/markdown",
+  },
   async (uri) => ({
-    contents: [{ uri: uri.href, text: await loadFile(LANG_REF_DIR, "references/idiomatic-pike.md") }],
-  })
+    contents: [
+      { uri: uri.href, text: await loadFile(LANG_REF_DIR, "references/idiomatic-pike.md") },
+    ],
+  }),
 );
 
 // Stdlib API references
@@ -380,7 +366,7 @@ for (const mod of apiModules) {
     { description: `Pike ${mod.name} API reference`, mimeType: "text/markdown" },
     async (uri) => ({
       contents: [{ uri: uri.href, text: await loadFile(STDLIB_API_DIR, mod.file) }],
-    })
+    }),
   );
 }
 
@@ -390,8 +376,10 @@ server.resource(
   "pike://ref/debugging/cli",
   { description: "Pike CLI flags and runtime introspection guide", mimeType: "text/markdown" },
   async (uri) => ({
-    contents: [{ uri: uri.href, text: await loadFile(DEBUG_DIR, "references/cli-and-introspection.md") }],
-  })
+    contents: [
+      { uri: uri.href, text: await loadFile(DEBUG_DIR, "references/cli-and-introspection.md") },
+    ],
+  }),
 );
 
 server.resource(
@@ -400,7 +388,7 @@ server.resource(
   { description: "Pike error patterns taxonomy with fixes", mimeType: "text/markdown" },
   async (uri) => ({
     contents: [{ uri: uri.href, text: await loadFile(DEBUG_DIR, "references/error-patterns.md") }],
-  })
+  }),
 );
 
 // ── Prompts ─────────────────────────────────────────────────────────────────
@@ -422,13 +410,13 @@ server.prompt(
             `Write Pike code to: ${task}`,
             context ? `\nContext: ${context}` : "",
             "\n\nKey Pike conventions:",
-            "- Arrays: ({1, 2, 3}), Mappings: ([\"key\": \"val\"]), Multisets: (< \"a\", \"b\" >)",
+            '- Arrays: ({1, 2, 3}), Mappings: (["key": "val"]), Multisets: (< "a", "b" >)',
             "- Constructor: create(), Destructor: destroy()",
             "- Inheritance: inherit Parent; parent call: ::method()",
             "- Structural equality: equal(a, b), NOT a == b (identity)",
             "- Error handling: catch { ... }; throw(({msg, backtrace()}))",
             "- Foreach: foreach(arr; int i; mixed val) { }",
-            "- Strings are immutable — use String.Buffer for building",
+            "- Strings have value semantics — use String.Buffer for efficient building",
             "- Integer division rounds toward -inf: -8/3 == -3",
             "- switch falls through — use break",
             "- zero_type(m[key]) to distinguish missing key from 0 value",
@@ -436,7 +424,7 @@ server.prompt(
         },
       },
     ],
-  })
+  }),
 );
 
 server.prompt(
@@ -456,7 +444,7 @@ server.prompt(
         },
       },
     ],
-  })
+  }),
 );
 
 server.prompt(
@@ -473,7 +461,7 @@ server.prompt(
         },
       },
     ],
-  })
+  }),
 );
 
 server.prompt(
@@ -498,7 +486,7 @@ server.prompt(
             "- catch {} for errors (not try/catch)",
             "- equal() for structural comparison (not == on arrays/mappings)",
             "- Reference semantics: arrays/mappings/objects are shared",
-            "- String immutability: use String.Buffer for building",
+            "- String value semantics: use String.Buffer for building",
             "- Proper error propagation: throw(({msg, backtrace()}))",
             "- Integer division: rounds toward -inf",
             "- zero_type() for missing mapping keys",
@@ -507,7 +495,7 @@ server.prompt(
         },
       },
     ],
-  })
+  }),
 );
 
 // ── Start ───────────────────────────────────────────────────────────────────
@@ -541,9 +529,23 @@ async function main() {
     console.error(`Warning: Debugging skill not found at ${DEBUG_DIR}`);
   }
 
+  // Validate content integrity at startup
+  await validateStartupContent(SKILLS_BASE, documentedModules, stdlib);
+
   const transport = new StdioServerTransport();
+  setupShutdown(transport);
   await server.connect(transport);
   console.error("pike-ai-kb MCP server running on stdio");
+}
+
+// Graceful shutdown on signals
+function setupShutdown(transport: StdioServerTransport) {
+  const shutdown = () => {
+    transport.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {

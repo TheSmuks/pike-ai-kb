@@ -21,7 +21,7 @@ Mapping keys must be strings. Arrays and mappings are the only compound types su
 URI parsing, manipulation, and resolution.
 
 ```pike
-Standards.URI(string|void uri, string|void base_uri)
+Standards.URI(string uri, string|void base_uri)
 ```
 Create a URI object. If `base_uri` is provided, `uri` is resolved relative to it.
 
@@ -37,18 +37,17 @@ Standards.URI->port      -> int|string
 Standards.URI->path      -> string
 Standards.URI->query     -> string     // raw query string
 Standards.URI->fragment  -> string
-Standards.URI->baseuri   -> string     // scheme + authority
+Standards.URI->base_uri  -> Standards.URI|zero // base URI object; 0 when no base set
 ```
 
 ### Methods
 
 ```pike
-Standards.URI()->combine(string relative_uri) -> Standards.URI
+Standards.URI()->combine_uri_path(string base_path, string relative) -> string
 Standards.URI()->reparse_uri() -> void
 Standards.URI()->get_query_variables() -> mapping(string:string)
-Standards.URI())->set_query_variables(mapping(string:string) vars) -> void
-Standards.URI())->get_http_path_query() -> string
-Standards.URI())->cast(string type) -> string
+Standards.URI()->set_query_variables(mapping(string:string) vars) -> void
+Standards.URI()->get_http_path_query() -> string
 ```
 Casting to "string" produces the full URI.
 
@@ -59,10 +58,10 @@ Casting to "string" produces the full URI.
 RFC 4122 UUID generation and parsing.
 
 ```pike
-Standards.UUID.make_version1() -> Standards.UUID.UUID
-Standards.UUID.make_version3(string namespace_uuid, string name) -> Standards.UUID.UUID
+Standards.UUID.make_version1(int node) -> Standards.UUID.UUID
+Standards.UUID.make_version3(string name, string|UUID namespace) -> Standards.UUID.UUID
 Standards.UUID.make_version4() -> Standards.UUID.UUID
-Standards.UUID.make_version5(string namespace_uuid, string name) -> Standards.UUID.UUID
+Standards.UUID.make_version5(string name, string|UUID namespace) -> Standards.UUID.UUID
 ```
 
 ### Standards.UUID.UUID
@@ -73,32 +72,32 @@ Standards.UUID.UUID(string uuid_string)
 
 ```pike
 Standards.UUID.UUID()->encode() -> string
-Standards.UUID.UUID())->str() -> string
-Standards.UUID.UUID())->variant() -> int
-Standards.UUID.UUID())->version() -> int
-Standards.UUID.UUID())->cast(string type) -> string
+Standards.UUID.UUID()->str() -> string
+Standards.UUID.UUID()->var           -> int      // variant field (read-only)
+Standards.UUID.UUID()->version      -> int      // version field (read-only)
+Standards.UUID.UUID()->str_variant() -> string
 ```
 
 ### Namespace Constants
 
 ```pike
-Standards.UUID.Namespace.DNS    // "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-Standards.UUID.Namespace.URL    // "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
-Standards.UUID.Namespace.OID    // "6ba7b812-9dad-11d1-80b4-00c04fd430c8"
-Standards.UUID.Namespace.X500   // "6ba7b814-9dad-11d1-80b4-00c04fd430c8"
+Standards.UUID.NameSpace_DNS    // "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+Standards.UUID.NameSpace_URL    // "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
+Standards.UUID.NameSpace_OID    // "6ba7b812-9dad-11d1-80b4-00c04fd430c8"
+Standards.UUID.NameSpace_X500   // "6ba7b814-9dad-11d1-80b4-00c04fd430c8"
 ```
 
 ---
 
-## Standards.BASE64
+## MIME Base64
 
 ```pike
-Standards.BASE64.encode(string data, int|void line_length) -> string
+MIME.encode_base64(string data, int|void no_wrap) -> string
 ```
-Encode binary data to base64. `line_length` inserts line breaks.
+Encode to base64. Non-zero `no_wrap` disables line wrapping.
 
 ```pike
-Standards.BASE64.decode(string encoded) -> string
+MIME.decode_base64(string encoded) -> string
 ```
 Decode base64 to binary data.
 
@@ -109,9 +108,14 @@ Decode base64 to binary data.
 PEM (Privacy Enhanced Mail) format handling for certificates and keys.
 
 ```pike
-Standards.PEM content(string pem_string) -> array(mapping)
+Standards.PEM.simple_decode(string pem_string) -> string
 ```
-Parse PEM content. Each mapping contains `("type": string, "data": string, "headers": mapping)`.
+Decode PEM content, returning the decoded data string.
+
+```pike
+Standards.PEM.Message(string pem_string) -> object
+```
+Parse PEM content into a Message object with fields `->body` (decoded data), `->pre` (type label), `->post`, `->trailer`, `->headers`.
 
 ```pike
 Standards.PEM.build(string type, string data, mapping|void headers) -> string
@@ -125,12 +129,12 @@ Build a PEM-encoded string.
 Internationalized Domain Names handling.
 
 ```pike
-Standards.IDNA.encode_hostname(string hostname) -> string
+Standards.IDNA.to_ascii(string hostname) -> string
 ```
 Encode a Unicode hostname to IDNA (punycode) format.
 
 ```pike
-Standards.IDNA.decode_hostname(string hostname) -> string
+Standards.IDNA.to_unicode(string hostname) -> string
 ```
 Decode an IDNA/punycode hostname to Unicode.
 

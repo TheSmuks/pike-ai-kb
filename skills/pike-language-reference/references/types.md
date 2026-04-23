@@ -3,7 +3,7 @@
 ## Value Types (Copied on Assignment)
 
 ### int
-Signed integer. Automatically promoted to `Gmp.mpz` (bignum) when exceeding native range.
+Signed integer. Automatically promoted to bignum (Gmp.mpz internally) when exceeding native range; the type remains `int`.
 
 ```pike
 int x = 42;
@@ -22,6 +22,7 @@ IEEE 754 double-precision floating point.
 ```pike
 float x = 3.14;
 // For infinity/NaN, use Math.inf and Math.nan from the Math module
+```
 
 Constants: `Float.MIN`, `Float.MAX`. For infinity/NaN, use `Math.inf` and `Math.nan` from the Math module.
 
@@ -30,7 +31,7 @@ Immutable sequence of bytes/characters. All operations return new strings.
 
 ```pike
 string s = "hello";
-string upper = String.upper_case(s);  // "HELLO" — s unchanged
+string upper = upper_case(s);       // "HELLO" — s unchanged
 int len = sizeof(s);                   // 5
 ```
 
@@ -71,7 +72,7 @@ multiset(string) s = (< "a", "b" >);
 s["a"];               // 1 (present)
 s["c"];               // 0 (absent)
 s["c"] = 1;           // add
-m_delete(s, "a");     // remove
+s["a"] = 0;            // remove entry
 ```
 
 ### object
@@ -151,9 +152,10 @@ void log(string msg) {
 ```
 
 ### zero
-The type of `0` / `UNDEFINED`. More restrictive than `int` — only the value zero.
+The type of `0` / `UNDEFINED`. More restrictive than `int` — only the value zero. Available from Pike 8.1 onwards (not available in 8.0).
 
 ```pike
+// Pike 8.1+ syntax (not available in 8.0):
 zero x = 0;    // OK
 zero y = 1;    // compile error
 ```
@@ -200,11 +202,11 @@ if (!zero_type(m[key])) {
 
 ## Bignum Auto-Promotion
 
-When an integer operation overflows the native range, Pike transparently promotes to `Gmp.mpz` (arbitrary precision). No code changes needed.
+When an integer operation overflows the native range, Pike transparently promotes to bignum (arbitrary precision, `Gmp.mpz` internally). The type remains `int` — no code changes needed.
 
 ```pike
 int big = Int.NATIVE_MAX;
-big += 1;  // now a Gmp.mpz, still works with all int operations
+big += 1;  // promoted to bignum internally, type still int, all int ops work
 big * big;  // still works, no overflow
 ```
 
@@ -292,7 +294,7 @@ typeof(3.14)   // float
 typeof("hi")   // string(104..105) — char range of literal
 typeof(({1}))  // array(int(1..1))
 typeof(([]))   // mapping(zero:zero)
-typeof(write)  // function(string:int) | function(...:int)
+typeof(write)  // scope(0, function(string:int) | function(array(string), mixed...:int) | function(__attribute__("sprintf_format", string), __attribute__("sprintf_args", mixed)...:int))
 
 // Use with type annotations
 int x = 42;
@@ -312,7 +314,7 @@ data->x;          // ({ 1, 2 }) — extracts all "x" values
 data->y;          // ({ 0, 0 }) — missing keys return 0
 
 // Works on array of objects — calls method
-array(objects) objs = ({obj1, obj2});
+array(object) objs = ({obj1, obj2});
 objs->method();   // array of return values
 
 // column() — extract nth element from array of arrays
