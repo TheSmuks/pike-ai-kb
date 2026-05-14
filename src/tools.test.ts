@@ -248,8 +248,38 @@ describe("pike-signature", () => {
     expect(Array.isArray(data.members)).toBe(true);
     expect(data.members.length).toBeGreaterThan(0);
   });
-});
 
+  it("resolves C-level predef builtin 'write' via pike-signature", async () => {
+    const code = buildSignatureCode('"write"');
+    const { stdout, exitCode } = await runPikeCode(code, undefined, 15_000);
+    expect(exitCode).toBe(0);
+    const data = JSON.parse(stdout);
+    expect(data.symbol).toBe("write");
+    expect(data.type).toBe("function");
+    expect(data.kind).toBe("function");
+    expect(typeof data.signature).toBe("string");
+  });
+
+  it("resolves C-level predef builtin 'arrayp' via pike-describe-symbol", async () => {
+    const code = buildDescribeSymbolCode('"arrayp"');
+    const { stdout, exitCode } = await runPikeCode(code, undefined, 15_000);
+    expect(exitCode).toBe(0);
+    const data = JSON.parse(stdout);
+    expect(data.symbol).toBe("arrayp");
+    expect(data.type).toBe("function");
+    expect(data.kind).toBe("function");
+  });
+
+  it("resolves C-level predef builtin 'all_constants' via pike-signature", async () => {
+    const code = buildSignatureCode('"all_constants"');
+    const { stdout, exitCode } = await runPikeCode(code, undefined, 15_000);
+    expect(exitCode).toBe(0);
+    const data = JSON.parse(stdout);
+    expect(data.symbol).toBe("all_constants");
+    expect(data.type).toBe("function");
+    expect(data.kind).toBe("function");
+  });
+});
 // Security: verify temp file behavior
 describe("temp file security", () => {
   it("uses unique temp directories per invocation", async () => {
@@ -617,6 +647,7 @@ describe("pikeResolvePreamble", () => {
     expect(preamble).toContain('string sym = "Stdio.File"');
     expect(preamble).toContain("master()->resolv(sym)");
     expect(preamble).toContain("_Stdio");
+    expect(preamble).toContain("all_constants()");
     expect(preamble).toContain("Standards.JSON.encode");
   });
 
@@ -624,6 +655,12 @@ describe("pikeResolvePreamble", () => {
     const preamble = pikeResolvePreamble('"Stdio.File"');
     expect(preamble).toContain('has_prefix(sym, "Stdio.")');
     expect(preamble).toContain('_Stdio." + sym[6..]');
+  });
+
+  it("includes all_constants() fallback for C-level predef builtins", () => {
+    const preamble = pikeResolvePreamble('"write"');
+    expect(preamble).toContain("mapping ac = all_constants();");
+    expect(preamble).toContain("if (ac[sym]) val = ac[sym];");
   });
 });
 
