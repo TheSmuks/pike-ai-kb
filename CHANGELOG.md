@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Rewrote AGENTS.md to define ingest/query/lint operations for wiki maintenance
 
+### Fixed
+
+- `pike-signature`, `pike-describe-symbol`, and `pike-list-methods` now resolve C-level predef builtins (e.g., `write`, `werror`, `arrayp`, `all_constants`) via an `all_constants()` fallback when `master()->resolv()` fails (#11)
+
 ## [1.0.0] - 2026-04-22
 
 ### Added
