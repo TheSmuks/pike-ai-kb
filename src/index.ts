@@ -391,6 +391,69 @@ server.resource(
   }),
 );
 
+// ── Wiki Resources ───────────────────────────────────────────────────────────
+
+const WIKI_BASE = resolve(__dirname, "../wiki");
+
+async function loadWikiFile(relativePath: string): Promise<string> {
+  const fullPath = join(WIKI_BASE, relativePath);
+  try {
+    return await readFile(fullPath, "utf-8");
+  } catch {
+    return `# Not found: ${relativePath}\n\nThis page does not exist yet. It may need to be created during an ingest.`;
+  }
+}
+
+// Overview
+server.resource(
+  "pike-wiki-overview",
+  "pike://wiki/overview",
+  { description: "Pike knowledge base wiki — top-level entry point and language overview", mimeType: "text/markdown" },
+  async (uri) => ({ contents: [{ uri: uri.href, text: await loadWikiFile("overview.md") }] }),
+);
+
+// Index
+server.resource(
+  "pike-wiki-index",
+  "pike://wiki/index",
+  { description: "Wiki content catalog — all pages, summaries, and metadata", mimeType: "text/markdown" },
+  async (uri) => ({ contents: [{ uri: uri.href, text: await loadWikiFile("index.md") }] }),
+);
+
+// Activity log
+server.resource(
+  "pike-wiki-log",
+  "pike://wiki/log",
+  { description: "Chronological activity log — ingests, queries, lint passes", mimeType: "text/markdown" },
+  async (uri) => ({ contents: [{ uri: uri.href, text: await loadWikiFile("log.md") }] }),
+);
+
+// Wiki pages by category — load all from each subdirectory
+const wikiCategories = [
+  { dir: "concepts", label: "language concepts" },
+  { dir: "entities", label: "core types" },
+  { dir: "modules", label: "standard library modules" },
+  { dir: "guides", label: "guides" },
+] as const;
+
+for (const cat of wikiCategories) {
+  const { readdirSync } = await import("node:fs");
+  try {
+    const files = readdirSync(join(WIKI_BASE, cat.dir)).filter((f) => f.endsWith(".md"));
+    for (const file of files) {
+      const pageName = file.replace(/\.md$/, "");
+      server.resource(
+        `pike-wiki-${cat.dir}-${pageName}`,
+        `pike://wiki/${cat.dir}/${pageName}`,
+        { description: `Pike ${cat.label} — ${pageName}`, mimeType: "text/markdown" },
+        async (uri) => ({ contents: [{ uri: uri.href, text: await loadWikiFile(`${cat.dir}/${file}`) }] }),
+      );
+    }
+  } catch {
+    // Directory doesn't exist yet — skip
+  }
+}
+
 // ── Prompts ─────────────────────────────────────────────────────────────────
 
 server.prompt(
