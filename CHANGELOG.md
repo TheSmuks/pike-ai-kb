@@ -9,10 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Applied LLM Wiki pattern — three-layer architecture (raw/, wiki/, AGENTS.md)
+- 24 interlinked wiki pages: 6 concepts, 6 entities, 9 modules, 2 guides
+- MCP server exposes wiki pages as `pike://wiki/...` resources
+
+### Changed
+
+- Rewrote AGENTS.md to define ingest/query/lint operations for wiki maintenance
 
 ## [1.0.0] - 2026-04-22
 
 ### Added
+
 - Adopted ai-project-template structure (AGENTS.md, CI workflows, .omp/ configuration)
 - ARCHITECTURE.md documenting system design
 - CONTRIBUTING.md with project conventions
