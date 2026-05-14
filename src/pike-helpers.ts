@@ -43,6 +43,12 @@ string sym = ${symExpr};
 catch { val = master()->resolv(sym); };
 if (!val && has_prefix(sym, "Stdio.") && !has_prefix(sym, "Stdio._"))
   catch { val = master()->resolv("_Stdio." + sym[6..]); };
+// C-level predef builtins (write, werror, arrayp, all_constants, etc.)
+// are not found by master()->resolv() — fall back to all_constants().
+if (!val) {
+  mapping ac = all_constants();
+  if (ac[sym]) val = ac[sym];
+}
 if (undefinedp(val) || val == 0) {
   write(Standards.JSON.encode((["error": "Symbol not found", "symbol": sym])));
   return 1;
